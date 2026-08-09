@@ -21,8 +21,8 @@ jobs:
           version: latest
       - name: 'Sync images'
         env:
-          DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USER }}
-          DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+          DOCKERHUB_USER: ${{ secrets.REGISTRY_USER }}
+          DOCKERHUB_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
         run: |
           $(nix-build ./nix/oci.nix --argstr dockerVersion ${{ github.ref_name }}) > oci.tar
           IMAGE_FULLNAME=$(tar -axf oci.tar manifest.json -O |jq -r '.[0].RepoTags[0]')
