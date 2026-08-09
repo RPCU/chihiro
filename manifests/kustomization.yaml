@@ -4,9 +4,31 @@ resources:
   - ./deploy.yaml
   - ./namespace.yaml
   - ./svc.yaml
-  - ./configmap.yaml
   # Uncomment the line below after creating your secret
   # - ./secret-example.yaml
 images:
   - name: chihiro
     newTag: v0.0.0
+
+# chihiro-config is generated from ./config.yaml instead of being embedded as a
+# block scalar in a ConfigMap. Previously the same config existed twice (here and
+# at the repo root); the copies drifted and this one ended up with `class` and
+# `controlPlane` dedented to column 0, making the rendered cluster template
+# invalid YAML. One generated source removes that whole class of bug.
+#
+# ./config.yaml is the real file; the repo-root config.yaml is a symlink to it,
+# so `go run . serve --config=config.yaml` still works. The file must live inside
+# this directory because kustomize refuses to read sources above its own root.
+#
+# The generated name carries a content hash and kustomize rewrites the
+# Deployment's volumes[].configMap.name to match. That matters here: the config
+# is mounted with `subPath`, and subPath mounts never receive ConfigMap updates,
+# so without the hash a config change would leave pods serving the old file.
+configMapGenerator:
+  - name: chihiro-config
+    files:
+      - config.yaml
+    options:
+      labels:
+        app.kubernetes.io/name: chihiro
+        app.kubernetes.io/part-of: chihiro

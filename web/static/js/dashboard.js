@@ -724,6 +724,14 @@
             loadLimitsInfo(); // Load and display limits
             renderDynamicParameters();
 
+            // Re-render dynamic parameters when the cluster name changes so
+            // parameter defaults embedding {{ chihiro.name }} stay resolved.
+            const nameInput = document.getElementById('clusterName');
+            if (nameInput && !nameInput._rerenderWired) {
+                nameInput.addEventListener('input', renderDynamicParameters);
+                nameInput._rerenderWired = true;
+            }
+
             // Initialize worker groups editor with one default group seeded
             // from the schema defaults.
             document.getElementById('createWorkerGroups').innerHTML = '';
@@ -1583,6 +1591,72 @@
             });
         }
 
+        // applyParameterConstraints filters constrained selects: disables
+        // options whose `constrain` on any current field value isn't satisfied
+        // and auto-selects the first compatible option. Reads each constraining
+        // field's live value from its param_<field> control (or built-in
+        // clusterName/clusterVersion controls).
+        function applyParameterConstraints() {
+            // Constraint field names are lowercased but control IDs use
+            // original casing — recover it for the lookup.
+            const casing = {};
+            (clusterParameters || []).forEach(p => { if (p && p.key) casing[p.key.toLowerCase()] = p.key; });
+            const fieldValue = (field) => {
+                // Built-in fields live in dedicated controls, not param_<field>.
+                if (field === 'name') {
+                    const el = document.getElementById('clusterName');
+                    return el ? el.value : undefined;
+                }
+                if (field === 'version') {
+                    const el = document.getElementById('clusterVersion');
+                    return el ? el.value : undefined;
+                }
+                const realKey = casing[field] || field;
+                const el = document.getElementById('param_' + realKey);
+                if (!el) return undefined;
+                return el.type === 'checkbox' ? String(el.checked) : el.value;
+            };
+            const selects = document.querySelectorAll('select[data-constrained]');
+            // One pass evaluates selects in DOM order, so a select constrained by
+            // a later one would read a stale value. Re-run until no select
+            // changes (fixpoint), bounded so a cyclic constrain config can't spin.
+            for (let pass = 0; pass < selects.length + 1; pass++) {
+                let changed = false;
+                selects.forEach(sel => {
+                    const constraintMap = sel._constraintMap || {};
+                    let foundCompatible = false;
+                    Array.from(sel.options).forEach(opt => {
+                        if (!opt.value) return; // skip placeholder
+                        const perField = constraintMap[opt.value];
+                        let isCompatible = true;
+                        if (perField) {
+                            for (const field in perField) {
+                                const allowed = perField[field];
+                                const cur = fieldValue(field);
+                                if (cur === undefined || cur === '') { isCompatible = false; break; }
+                                if (!allowed.some(v => v.toLowerCase() === String(cur).toLowerCase())) {
+                                    isCompatible = false;
+                                    break;
+                                }
+                            }
+                        }
+                        opt.disabled = !isCompatible;
+                        opt.style.color = isCompatible ? '' : 'var(--md-sys-color-on-surface-variant)';
+                        opt.style.opacity = isCompatible ? '' : '0.5';
+                        if (opt.value === sel.value && isCompatible) foundCompatible = true;
+                    });
+                    if (!foundCompatible) {
+                        const firstCompatible = Array.from(sel.options).find(o => o.value && !o.disabled);
+                        if (firstCompatible && sel.value !== firstCompatible.value) {
+                            sel.value = firstCompatible.value;
+                            changed = true;
+                        }
+                    }
+                });
+                if (!changed) break;
+            }
+        }
+
         // Tracks the resolved default last applied to each parameter field, so a
         // re-render (e.g. after the version changes) can tell whether the field
         // still holds its default — and may be refreshed — or was edited by the
@@ -1610,6 +1684,7 @@
 
             const builtins = {
                 version: document.getElementById('clusterVersion').value || '',
+                name: (document.getElementById('clusterName') || {}).value || '',
             };
 
             clusterParameters.forEach(p => {
@@ -1696,6 +1771,36 @@
                         });
                         input._resolvedVersionMap = resolvedVersionMap;
                     }
+                    // Generic constraints: an option may constrain any other
+                    // field. Build an optionValue → {field → allowedValues}
+                    // lookup. Version is handled above and excluded here.
+                    const constrainFields = new Set();
+                    p.options.forEach(opt => {
+                        if (opt && typeof opt === 'object' && opt.constrain) {
+                            Object.keys(opt.constrain).forEach(f => {
+                                if (f.toLowerCase() !== 'version') constrainFields.add(f.toLowerCase());
+                            });
+                        }
+                    });
+                    if (constrainFields.size > 0) {
+                        input.setAttribute('data-constrained', 'true');
+                        const constraintMap = {};
+                        p.options.forEach(opt => {
+                            if (!opt || typeof opt !== 'object' || !opt.constrain) return;
+                            // Key must match the DOM option value exactly, which
+                            // is only resolved when the parameter is auto-resolved.
+                            const key = isAutoResolved
+                                ? resolveParameterValue(opt.value, builtins)
+                                : opt.value;
+                            const perField = {};
+                            constrainFields.forEach(f => {
+                                const allowed = optionConstraintValues(opt, f);
+                                if (allowed) perField[f] = allowed.map(v => String(v));
+                            });
+                            constraintMap[key] = perField;
+                        });
+                        input._constraintMap = constraintMap;
+                    }
                 } else {
                     input = document.createElement('input');
                     input.type = p.type === 'number' ? 'number' : 'text';
@@ -1718,6 +1823,9 @@
                 if (p.type !== 'boolean') {
                     group.appendChild(input);
                 }
+
+                // Re-run generic constraint filter when any control changes.
+                input.addEventListener('change', applyParameterConstraints);
 
                 if (p.description) {
                     const small = document.createElement('small');
@@ -1745,6 +1853,8 @@
             if (versionSelect && versionSelect.value) {
                 filterImageDropdown([versionSelect.value]);
             }
+            // Apply initial generic constraints so the form is coherent.
+            applyParameterConstraints();
         }
 
         // Form submissions

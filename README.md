@@ -3,7 +3,7 @@
 Chihiro is a Go web application that watches Kubernetes Cluster API (CAPI)
 custom resources and exposes a dashboard to create, edit, and delete workload
 clusters. Auth is OIDC, sessions live in Redis, and the UI updates in real time
-over WebSockets.
+over WebSockets. More details on Chihiro's forms can be found here: https://banh-canh.github.io/posts/chihiro-forms/
 
 ## Configuration
 
@@ -293,6 +293,9 @@ worker_group_template: |
 
 ## Examples
 
-- `config.yaml` — full local/dev example.
-- `manifests/configmap.yaml` — Kubernetes ConfigMap example.
+- `manifests/config.yaml` — full config example, and the single source for the
+  deployed ConfigMap. The repo-root `config.yaml` is a symlink to it, so
+  `--config=config.yaml` keeps working for local runs.
+- `manifests/kustomization.yaml` — generates the `chihiro-config` ConfigMap from
+  that file via `configMapGenerator`, so the config is never duplicated.
 - `manifests/secret-example.yaml` — secrets template (client secret, session key, redis password).

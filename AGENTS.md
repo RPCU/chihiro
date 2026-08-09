@@ -17,8 +17,12 @@ Guidance for AI agents and contributors working in this repository.
 
 Chihiro is a Go web application that watches Kubernetes Cluster API (CAPI)
 custom resources and exposes a dashboard to create, edit, and delete workload
-clusters. Auth is OIDC; sessions are stored in Redis; the UI updates in real
+clusters. More details on Chihiro's forms can be found here: https://banh-canh.github.io/posts/chihiro-forms/
+Auth is OIDC; sessions are stored in Redis; the UI updates in real
 time over WebSockets.
+
+
+![Chihiro Illustration](./assets/chihiro-ui.png)
 
 Module path: `github.com/Bealvio/chihiro`.
 
