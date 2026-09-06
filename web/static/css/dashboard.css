@@ -23,6 +23,11 @@
             margin: 0;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
+            /* Column layout so the footer can be pinned to the bottom of the
+               viewport when the page content is shorter than the screen. */
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
         }
 
         /* Header */
@@ -649,6 +654,10 @@
 
         /* Footer */
         .app-footer {
+            /* Absorbs the leftover vertical space of the body flex column, so
+               the footer sits at the bottom of the viewport on short pages and
+               flows after the content on long ones. */
+            margin-top: auto;
             text-align: center;
             padding: 12px 16px;
             font-size: 0.75rem;
