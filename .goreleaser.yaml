@@ -14,7 +14,7 @@ builds:
       - arm64
       - arm
     ldflags:
-      - -s -w -X github.com/Bealvio/chihiro/cmd.version=v{{- .Version }}
+      - -s -w -X github.com/Bealvio/chihiro/cmd.Version=v{{- .Version }} -X github.com/Bealvio/chihiro/cmd.Commit={{- .FullCommit }}
 archives:
   - formats: ['tar.gz']
     # this name template makes the OS and Arch compatible with the results of `uname`.

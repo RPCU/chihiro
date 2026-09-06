@@ -19,7 +19,9 @@ import (
 
 func (s *Server) handleLoginPage(c *gin.Context) {
 	slog.Debug("Serving login page", "remote_addr", c.ClientIP(), "user_agent", c.Request.Header.Get("User-Agent"))
-	c.HTML(http.StatusOK, "login.html", nil)
+	c.HTML(http.StatusOK, "login.html", gin.H{
+		"devmode": s.devmode,
+	})
 }
 
 func (s *Server) handleHome(c *gin.Context) {
@@ -82,6 +84,8 @@ func (s *Server) handleGetConfig(c *gin.Context) {
 	slog.Debug("Serving config", "username", user.Username, "docs_url", docsURL)
 	c.JSON(http.StatusOK, gin.H{
 		"docsUrl": docsURL,
+		"version": s.version,
+		"commit":  s.commit,
 	})
 }
 

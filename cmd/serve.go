@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/boj/redistore"
+	"github.com/gorilla/sessions"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -50,7 +51,7 @@ func runServer() {
 	})
 	slog.SetDefault(slog.New(handler))
 
-	slog.Info("Starting cluster watcher application", "version", "v1.0.0", "log_level", logLevel.String())
+	slog.Info("Starting cluster watcher application", "version", Version, "commit", Commit, "log_level", logLevel.String())
 	slog.Info("Loading configuration from environment variables and config file")
 
 	if env := os.Getenv("CHIHIRO_CLUSTER_DOMAIN"); env != "" {
@@ -140,7 +141,17 @@ func runServer() {
 
 	host := getEnvOrConfig("CHIHIRO_HOST", "host", "0.0.0.0")
 	port := getEnvOrConfigInt("CHIHIRO_PORT", "port", 8080)
-	slog.Info("Server configuration", "host", host, "port", port)
+
+	devmode := viper.GetBool("devmode")
+	if env := os.Getenv("CHIHIRO_DEVMODE"); env != "" {
+		devmode = parseBool(env)
+	}
+
+	if devmode {
+		slog.Warn("DEVMODE ENABLED — authentication is disabled, do not use in production")
+	}
+
+	slog.Info("Server configuration", "host", host, "port", port, "devmode", devmode)
 
 	var authConfig auth.Config
 	viper.UnmarshalKey("oidc", &authConfig)
@@ -174,15 +185,22 @@ func runServer() {
 	)
 
 	if authConfig.IssuerURL == "" || authConfig.ClientID == "" || authConfig.ClientSecret == "" {
-		slog.Error("OIDC configuration incomplete", "missing_fields", "issuer-url, client-id, or client-secret")
-		slog.Error("Set CHIHIRO_OIDC_ISSUER_URL, CHIHIRO_OIDC_CLIENT_ID, and CHIHIRO_OIDC_CLIENT_SECRET environment variables")
-		os.Exit(1)
+		if !devmode {
+			slog.Error("OIDC configuration incomplete", "missing_fields", "issuer-url, client-id, or client-secret")
+			slog.Error("Set CHIHIRO_OIDC_ISSUER_URL, CHIHIRO_OIDC_CLIENT_ID, and CHIHIRO_OIDC_CLIENT_SECRET environment variables")
+			os.Exit(1)
+		}
+		slog.Warn("OIDC not configured, running in devmode with default dev user")
 	}
 
 	if len(authConfig.SessionKey) < 32 {
-		slog.Error("Session key must be at least 32 bytes", "current_length", len(authConfig.SessionKey))
-		slog.Error("Set CHIHIRO_SESSION_KEY environment variable with a secure random key (openssl rand -base64 32)")
-		os.Exit(1)
+		if !devmode {
+			slog.Error("Session key must be at least 32 bytes", "current_length", len(authConfig.SessionKey))
+			slog.Error("Set CHIHIRO_SESSION_KEY environment variable with a secure random key (openssl rand -base64 32)")
+			os.Exit(1)
+		}
+		authConfig.SessionKey = "devmode-session-key-not-for-production-use-only"
+		slog.Warn("Using default devmode session key (not for production)")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -201,64 +219,79 @@ func runServer() {
 	redisPassword := getEnvOrConfig("CHIHIRO_REDIS_PASSWORD", "redis.password", "")
 	sessionTTL := getEnvOrConfigInt("CHIHIRO_SESSION_TTL", "redis.session_ttl", 3600)
 
-	slog.Info("Redis configuration", "addr", redisAddr, "username", redisUsername, "session_ttl", sessionTTL)
-	slog.Info("Connecting to Redis for session storage")
+	var sessionStore sessions.Store
 
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     redisAddr,
-		Username: redisUsername,
-		Password: redisPassword,
-	})
+	if devmode {
+		slog.Info("Using cookie-based session store (devmode, no Redis required)")
+		sessionStore = sessions.NewCookieStore([]byte(authConfig.SessionKey))
+	} else {
+		slog.Info("Redis configuration", "addr", redisAddr, "username", redisUsername, "session_ttl", sessionTTL)
+		slog.Info("Connecting to Redis for session storage")
 
-	if _, err := redisClient.Ping(context.Background()).Result(); err != nil {
-		slog.Error("Could not connect to Redis", "error", err)
-		os.Exit(1)
+		redisClient := redis.NewClient(&redis.Options{
+			Addr:     redisAddr,
+			Username: redisUsername,
+			Password: redisPassword,
+		})
+
+		if _, err := redisClient.Ping(context.Background()).Result(); err != nil {
+			slog.Error("Could not connect to Redis", "error", err)
+			os.Exit(1)
+		}
+		redisClient.Close()
+
+		var err error
+		sessionStore, err = redistore.NewRediStore(10, "tcp", redisAddr, redisUsername, redisPassword, []byte(authConfig.SessionKey))
+		if err != nil {
+			slog.Error("Could not create Redis session store", "error", err)
+			os.Exit(1)
+		}
 	}
-	redisClient.Close()
 
-	sessionStore, err := redistore.NewRediStore(10, "tcp", redisAddr, redisUsername, redisPassword, []byte(authConfig.SessionKey))
-	if err != nil {
-		slog.Error("Could not create Redis session store", "error", err)
-		os.Exit(1)
-	}
 	defer func() {
-		if err := sessionStore.Close(); err != nil {
-			slog.Error("Failed to close Redis session store cleanly", "error", err)
+		if closer, ok := sessionStore.(interface{ Close() error }); ok {
+			if err := closer.Close(); err != nil {
+				slog.Error("Failed to close session store cleanly", "error", err)
+			}
 		}
 	}()
-	sessionStore.SetMaxAge(sessionTTL)
 
-	sessionStore.Options.Path = "/"
-	sessionStore.Options.MaxAge = sessionTTL
-	sessionStore.Options.HttpOnly = true
-	// Drive the Secure flag from config/TLS rather than hardcoding it.
-	// Precedence:
-	//   1. Explicit CHIHIRO_SESSION_SECURE / session.secure setting.
-	//   2. Otherwise auto-detect: true when the OIDC redirect URL is HTTPS
-	//      (i.e. served behind TLS), false for local HTTP development.
-	// The Secure flag must be false on plain HTTP or browsers drop the cookie.
-	secureCookies := strings.HasPrefix(strings.ToLower(authConfig.RedirectURL), "https://")
-	if env := os.Getenv("CHIHIRO_SESSION_SECURE"); env != "" {
-		secureCookies = parseBool(env)
-	} else if viper.IsSet("session.secure") {
-		secureCookies = viper.GetBool("session.secure")
-	}
-	sessionStore.Options.Secure = secureCookies
-	sessionStore.Options.SameSite = http.SameSiteLaxMode // Lax mode for OAuth callbacks
-
-	slog.Info("Session cookie security configured", "secure", secureCookies)
-
-	slog.Info("Redis session store initialized successfully")
-
-	oidcProvider, err := auth.NewOIDCProvider(&authConfig, sessionStore)
-	if err != nil {
-		slog.Error("Failed to create OIDC provider", "error", err)
-		os.Exit(1)
+	if cs, ok := sessionStore.(*redistore.RediStore); ok {
+		cs.SetMaxAge(sessionTTL)
+		cs.Options.Path = "/"
+		cs.Options.MaxAge = sessionTTL
+		cs.Options.HttpOnly = true
+		secureCookies := strings.HasPrefix(strings.ToLower(authConfig.RedirectURL), "https://")
+		if env := os.Getenv("CHIHIRO_SESSION_SECURE"); env != "" {
+			secureCookies = parseBool(env)
+		} else if viper.IsSet("session.secure") {
+			secureCookies = viper.GetBool("session.secure")
+		}
+		cs.Options.Secure = secureCookies
+		cs.Options.SameSite = http.SameSiteLaxMode
+		slog.Info("Session cookie security configured", "secure", secureCookies)
+	} else if cs, ok := sessionStore.(*sessions.CookieStore); ok {
+		cs.Options.Path = "/"
+		cs.Options.HttpOnly = true
+		cs.Options.SameSite = http.SameSiteLaxMode
+		slog.Info("Cookie session store configured (devmode)")
 	}
 
-	authMiddleware := auth.NewMiddleware(oidcProvider)
+	slog.Info("Session store initialized successfully")
 
-	srv := server.NewServer(clusterWatcher, clusterManager, authMiddleware)
+	var authMiddleware *auth.Middleware
+	if devmode {
+		authMiddleware = auth.NewDevModeMiddleware()
+	} else {
+		oidcProvider, err := auth.NewOIDCProvider(&authConfig, sessionStore)
+		if err != nil {
+			slog.Error("Failed to create OIDC provider", "error", err)
+			os.Exit(1)
+		}
+		authMiddleware = auth.NewMiddleware(oidcProvider)
+	}
+
+	srv := server.NewServer(clusterWatcher, clusterManager, authMiddleware, devmode, Version, Commit)
 	defer srv.Close()
 
 	clusterWatcher.Start(ctx)

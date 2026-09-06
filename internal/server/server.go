@@ -28,6 +28,9 @@ type Server struct {
 	kubeconfigGen *kubeconfig.Generator
 	router        *gin.Engine
 	stopCleanup   chan struct{}
+	devmode       bool
+	version       string
+	commit        string
 }
 
 var clusterNameRegex = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
@@ -45,8 +48,8 @@ func validateGroupNames(groups []string) string {
 	return ""
 }
 
-func NewServer(w *watcher.ClusterWatcher, m *cluster.Manager, authMiddleware *auth.Middleware) *Server {
-	slog.Info("Initializing server with routes and middleware")
+func NewServer(w *watcher.ClusterWatcher, m *cluster.Manager, authMiddleware *auth.Middleware, devmode bool, version, commit string) *Server {
+	slog.Info("Initializing server with routes and middleware", "devmode", devmode)
 
 	gin.SetMode(gin.ReleaseMode)
 
@@ -65,6 +68,9 @@ func NewServer(w *watcher.ClusterWatcher, m *cluster.Manager, authMiddleware *au
 		kubeconfigGen: kubeconfigGen,
 		router:        gin.New(),
 		stopCleanup:   make(chan struct{}),
+		devmode:       devmode,
+		version:       version,
+		commit:        commit,
 	}
 
 	s.setupRoutes()

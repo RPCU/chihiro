@@ -31,6 +31,14 @@ function loadConfig() {
                 docsLink.href = config.docsUrl;
                 docsLink.style.display = 'inline-flex';
             }
+            // Show version/commit in footer
+            const footer = document.getElementById('appFooter');
+            if (footer) {
+                const parts = [];
+                if (config.version) parts.push(config.version);
+                if (config.commit) parts.push(config.commit.substring(0, 7));
+                footer.textContent = parts.length > 0 ? 'Chihiro ' + parts.join(' \u00b7 ') : '';
+            }
         })
         .catch(error => {
             console.error('Error loading config:', error);

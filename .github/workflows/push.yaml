@@ -24,7 +24,7 @@ jobs:
           DOCKERHUB_USER: ${{ secrets.REGISTRY_USER }}
           DOCKERHUB_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
         run: |
-          $(nix-build ./nix/oci.nix --argstr dockerVersion ${{ github.ref_name }}) > oci.tar
+          $(nix-build ./nix/oci.nix --argstr dockerVersion ${{ github.ref_name }} --argstr commit ${{ github.sha }}) > oci.tar
           IMAGE_FULLNAME=$(tar -axf oci.tar manifest.json -O |jq -r '.[0].RepoTags[0]')
           skopeo --version
 

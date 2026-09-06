@@ -10,6 +10,12 @@ import (
 
 var cfgFile string
 
+// Set via ldflags at build time.
+var (
+	Version = "dev"
+	Commit  = "unknown"
+)
+
 var rootCmd = &cobra.Command{
 	Use:   "chihiro",
 	Short: "A web application to watch and display Cluster API resources",
@@ -40,6 +46,7 @@ func init() {
 	rootCmd.PersistentFlags().String("oidc-client-secret", "", "OIDC client secret")
 	rootCmd.PersistentFlags().String("oidc-redirect-url", "", "OIDC redirect URL (default: http://host:port/auth/callback)")
 	rootCmd.PersistentFlags().String("session-key", "", "Session encryption key (random if not provided)")
+	rootCmd.PersistentFlags().Bool("devmode", false, "Enable development mode (no authentication)")
 
 	viper.BindPFlag("kubeconfig", rootCmd.PersistentFlags().Lookup("kubeconfig"))
 	viper.BindPFlag("port", rootCmd.PersistentFlags().Lookup("port"))
@@ -49,6 +56,7 @@ func init() {
 	viper.BindPFlag("oidc.client_secret", rootCmd.PersistentFlags().Lookup("oidc-client-secret"))
 	viper.BindPFlag("oidc.redirect_url", rootCmd.PersistentFlags().Lookup("oidc-redirect-url"))
 	viper.BindPFlag("oidc.session_key", rootCmd.PersistentFlags().Lookup("session-key"))
+	viper.BindPFlag("devmode", rootCmd.PersistentFlags().Lookup("devmode"))
 }
 
 func initConfig() {

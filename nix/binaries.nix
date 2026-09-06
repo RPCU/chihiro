@@ -1,6 +1,7 @@
 {
   pkgs ? import <nixpkgs> { },
   version ? "dev",
+  commit ? "unknown",
 }:
 let
   inherit (pkgs.lib) cleanSource cleanSourceWith;
@@ -26,7 +27,8 @@ pkgs.buildGoModule {
   ldflags = [
     "-s"
     "-w"
-    "-X github.com/Bealvio/chihiro/cmd.version=${version}"
+    "-X github.com/Bealvio/chihiro/cmd.Version=${version}"
+    "-X github.com/Bealvio/chihiro/cmd.Commit=${commit}"
   ];
 
   vendorHash = "sha256-yVtFnfDS1139AGGqZLf0IY5UVs+BZPa4+TOpk9EzrgI=";

@@ -153,7 +153,7 @@ Three GitHub Actions workflows under `.github/workflows/`:
 - **push.yaml** — triggered by tag pushes (`*.*.*`) and manual dispatch.
   Builds an OCI image with Nix, pushes to Docker Hub via `skopeo`. Also runs
   GoReleaser (`goreleaser.yaml`) to produce cross-platform tar.gz archives
-  with ldflags injecting `cmd.version`.
+  with ldflags injecting `cmd.Version` and `cmd.Commit`.
 
 Release artifacts are built with `CGO_ENABLED=0` for linux/amd64, arm64, arm.
 

@@ -20,12 +20,20 @@ const UserContextKey contextKey = "user"
 
 type Middleware struct {
 	provider *OIDCProvider
+	devmode  bool
 }
 
 func NewMiddleware(provider *OIDCProvider) *Middleware {
 	slog.Info("Initializing authentication middleware")
 	return &Middleware{
 		provider: provider,
+	}
+}
+
+func NewDevModeMiddleware() *Middleware {
+	slog.Warn("Initializing devmode authentication middleware (no authentication)")
+	return &Middleware{
+		devmode: true,
 	}
 }
 
@@ -41,6 +49,22 @@ func (m *Middleware) RequireAuth() gin.HandlerFunc {
 				"remote_addr",
 				c.ClientIP(),
 			)
+			c.Next()
+			return
+		}
+
+		if m.devmode {
+			slog.Debug("Devmode: bypassing authentication", "path", c.Request.URL.Path)
+			devUser := &UserInfo{
+				Sub:      "dev-user",
+				Name:     "Dev User",
+				Email:    "dev@localhost",
+				Username: "dev",
+				Groups:   []string{"devmode", "platform-admins", "developers", "cluster-admin"},
+				IsAdmin:  true,
+			}
+			ctx := context.WithValue(c.Request.Context(), UserContextKey, devUser)
+			c.Request = c.Request.WithContext(ctx)
 			c.Next()
 			return
 		}
@@ -256,6 +280,12 @@ func getRedirectURLFromRequest(r *http.Request) string {
 
 // HandleLogin initiates OIDC login flow
 func (m *Middleware) HandleLogin(c *gin.Context) {
+	if m.devmode {
+		slog.Debug("Devmode: redirecting login to dashboard")
+		c.Redirect(http.StatusFound, "/")
+		return
+	}
+
 	slog.Info("Initiating OIDC login flow", "remote_addr", c.ClientIP(), "user_agent", c.Request.Header.Get("User-Agent"))
 
 	state, err := GenerateState()
@@ -307,6 +337,12 @@ func (m *Middleware) HandleLogin(c *gin.Context) {
 
 // HandleCallback handles OIDC callback
 func (m *Middleware) HandleCallback(c *gin.Context) {
+	if m.devmode {
+		slog.Debug("Devmode: ignoring auth callback, redirecting to dashboard")
+		c.Redirect(http.StatusFound, "/")
+		return
+	}
+
 	code := c.Query("code")
 	state := c.Query("state")
 
@@ -406,6 +442,12 @@ func (m *Middleware) HandleCallback(c *gin.Context) {
 
 // HandleLogout clears user session
 func (m *Middleware) HandleLogout(c *gin.Context) {
+	if m.devmode {
+		slog.Debug("Devmode: ignoring logout, redirecting to dashboard")
+		c.Redirect(http.StatusFound, "/")
+		return
+	}
+
 	user, _ := GetUserFromContext(c.Request.Context())
 	username := "unknown"
 	if user != nil {

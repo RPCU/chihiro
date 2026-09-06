@@ -1,10 +1,11 @@
 {
   pkgs ? import <nixpkgs> { },
   dockerVersion ? "0.0.0",
+  commit ? "unknown",
   imageName ? "zot.rpcu.io/public/chihiro",
 }:
 let
-  binaries = pkgs.callPackage ./binaries.nix { version = dockerVersion; };
+  binaries = pkgs.callPackage ./binaries.nix { version = dockerVersion; inherit commit; };
   webAssets = pkgs.runCommand "chihiro-web-assets" { } ''
     mkdir -p $out/web
     cp -r ${../web}/* $out/web/

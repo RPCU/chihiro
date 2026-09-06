@@ -40,12 +40,23 @@
     <div class="login-container">
         <i class="material-icons logo">developer_board</i>
         <h4>Chihiro</h4>
+        {{if .devmode}}
+        <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 10px; margin-bottom: 15px;">
+            <strong style="color: #856404;">DEVMODE</strong>
+            <p style="color: #856404; margin: 5px 0 0 0; font-size: 0.9em;">Authentication is disabled. Do not use in production.</p>
+        </div>
+        <a href="/auth/login" class="btn waves-effect waves-light login-btn">
+            <i class="material-icons left">arrow_forward</i>
+            Enter Dashboard
+        </a>
+        <script>setTimeout(function(){ window.location.href = "/auth/login"; }, 2000);</script>
+        {{else}}
         <p class="grey-text">Please sign in to access the cluster manager</p>
-
         <a href="/auth/login" class="btn waves-effect waves-light login-btn">
             <i class="material-icons left">login</i>
             Sign in with OIDC
         </a>
+        {{end}}
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>

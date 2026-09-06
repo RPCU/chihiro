@@ -10,5 +10,5 @@ jobs:
       - uses: cachix/install-nix-action@v27
         with:
           nix_path: nixpkgs=channel:nixos-unstable
-      - run: nix-build -E 'with import <nixpkgs> {}; callPackage ./nix/binaries.nix {}'
-      - run: nix-build -E 'with import <nixpkgs> {}; callPackage ./nix/oci.nix {}'
+      - run: nix-build -E 'with import <nixpkgs> {}; callPackage ./nix/binaries.nix { commit = "${{ github.sha }}"; }'
+      - run: nix-build -E 'with import <nixpkgs> {}; callPackage ./nix/oci.nix { commit = "${{ github.sha }}"; }'
