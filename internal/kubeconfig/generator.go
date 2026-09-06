@@ -647,7 +647,7 @@ users:
 
 	contextName := data.ClusterName
 	userName := fmt.Sprintf("%s-oidc", data.OIDCConfig.Username)
-	namespace := fmt.Sprintf("%s-kube-user-default", data.ClusterName)
+	namespace := "default"
 
 	return fmt.Sprintf(template,
 		clusterConfig,             // cluster configuration
