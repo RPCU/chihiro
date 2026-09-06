@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Bealvio/chihiro/internal/auth"
 	"github.com/Bealvio/chihiro/internal/capi"
 	"github.com/Bealvio/chihiro/internal/cluster"
 	"github.com/gorilla/websocket"
@@ -638,6 +639,12 @@ func (cw *ClusterWatcher) GetClustersForUser(userGroups []string) []*ClusterInfo
 }
 
 func (cw *ClusterWatcher) canUserAccessCluster(cluster *ClusterInfo, userGroups []string) bool {
+	// Devmode grants access to every chihiro-managed cluster so the dashboard
+	// renders exactly as it would for an admin in a real deployment.
+	if auth.DevModeEnabled() {
+		return true
+	}
+
 	userGroupMap := make(map[string]bool)
 	for _, group := range userGroups {
 		userGroupMap[strings.TrimSpace(group)] = true

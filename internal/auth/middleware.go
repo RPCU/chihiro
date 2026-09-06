@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,6 +18,27 @@ import (
 type contextKey string
 
 const UserContextKey contextKey = "user"
+
+// devmodeEnabled is set once at startup when the server is launched with
+// authentication disabled. It makes every group-based permission check succeed
+// so a local developer sees and can exercise the complete UI without having to
+// mirror the deployed admin/creator/visible group names in their local config.
+//
+// This MUST only ever be set from NewDevModeMiddleware, which is only reachable
+// when the operator explicitly opted into devmode.
+var devmodeEnabled atomic.Bool
+
+// SetDevMode toggles the global development-mode permission bypass.
+func SetDevMode(enabled bool) {
+	devmodeEnabled.Store(enabled)
+}
+
+// DevModeEnabled reports whether the development-mode permission bypass is
+// active. Callers use it to skip authorization filtering that is not expressed
+// through CheckUserGroups.
+func DevModeEnabled() bool {
+	return devmodeEnabled.Load()
+}
 
 type Middleware struct {
 	provider *OIDCProvider
@@ -31,7 +53,8 @@ func NewMiddleware(provider *OIDCProvider) *Middleware {
 }
 
 func NewDevModeMiddleware() *Middleware {
-	slog.Warn("Initializing devmode authentication middleware (no authentication)")
+	slog.Warn("Initializing devmode authentication middleware (no authentication, all authorization checks bypassed)")
+	SetDevMode(true)
 	return &Middleware{
 		devmode: true,
 	}
@@ -125,6 +148,11 @@ func GetUserFromContext(ctx context.Context) (*UserInfo, bool) {
 // CheckUserGroups verifies if user has any of the required groups
 func CheckUserGroups(userGroups []string, requiredGroups []string) bool {
 	slog.Debug("Checking user groups", "user_groups", userGroups, "required_groups", requiredGroups)
+
+	if DevModeEnabled() {
+		slog.Debug("Devmode: granting access without group check", "required_groups", requiredGroups)
+		return true
+	}
 
 	if len(requiredGroups) == 0 {
 		slog.Debug("No group requirements, access granted")

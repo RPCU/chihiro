@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"slices"
 	"strings"
 	"time"
 
@@ -115,15 +114,7 @@ func (s *Server) handleGetUserGroups(c *gin.Context) {
 		adminGroups = []string{"cluster-admin"}
 	}
 
-	isAdmin := false
-	for _, adminGroup := range adminGroups {
-		if slices.Contains(user.Groups, adminGroup) {
-			isAdmin = true
-		}
-		if isAdmin {
-			break
-		}
-	}
+	isAdmin := auth.CheckUserGroups(user.Groups, adminGroups)
 
 	slog.Debug("Returning user groups", "username", user.Username, "groups", user.Groups, "is_admin", isAdmin)
 	c.JSON(http.StatusOK, gin.H{
