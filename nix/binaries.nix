@@ -31,7 +31,7 @@ pkgs.buildGoModule {
     "-X github.com/Bealvio/chihiro/cmd.Commit=${commit}"
   ];
 
-  vendorHash = "sha256-yVtFnfDS1139AGGqZLf0IY5UVs+BZPa4+TOpk9EzrgI=";
+  vendorHash = "sha256-K7ntN3P4m7IdkY+ONSIyFZiC2tLf1p5p9Hp7T5zfykc=";
 
   doCheck = true;
 

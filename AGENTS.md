@@ -63,6 +63,19 @@ CI also enforces:
 Install both with `go install mvdan.cc/gofumpt@latest` and
 `go install github.com/segmentio/golines@latest`.
 
+### Nix build verification
+
+After any change to `go.mod`, `go.sum`, or `nix/binaries.nix`, verify the
+Nix build succeeds to catch `vendorHash` mismatches early:
+
+```sh
+nix-build nix/binaries.nix
+```
+
+If you see a `hash mismatch in fixed-output derivation` error, update the
+`vendorHash` in `nix/binaries.nix` with the `got:` hash from the error
+output. Do **not** commit a derivation with a stale hash.
+
 ## Conventions
 
 - Structured logging via `log/slog` only. Do not use `fmt.Print*` or the
