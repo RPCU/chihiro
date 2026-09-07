@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 
@@ -14,57 +13,52 @@ import (
 
 // Handler exposes the MCP Streamable HTTP handler for mounting on a Gin router.
 type Handler struct {
-	watcher *watcher.ClusterWatcher
-	manager *cluster.Manager
+	handler http.Handler
 }
 
 // NewHandler creates a new MCP handler with all tools registered.
+// Authentication happens per-request inside the getClient callback.
 func NewHandler(w *watcher.ClusterWatcher, m *cluster.Manager) *Handler {
-	return &Handler{
-		watcher: w,
-		manager: m,
-	}
-}
+	h := &Handler{}
 
-// ServeHTTP implements http.Handler so the MCP endpoint can be mounted on Gin.
-// It authenticates the request and delegates to the MCP Streamable HTTP handler.
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	user, ok := Authenticate(r)
-	if !ok {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
-		return
-	}
+	h.handler = mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
+		user, ok := Authenticate(r)
+		if !ok {
+			return nil
+		}
 
-	slog.Debug("MCP session authenticated", "username", user.Username)
+		slog.Debug("MCP session authenticated", "username", user.Username)
 
-	deps := &toolDeps{
-		watcher: h.watcher,
-		manager: h.manager,
-		user:    user,
-	}
+		deps := &toolDeps{
+			watcher: w,
+			manager: m,
+			user:    user,
+		}
 
-	srv := mcp.NewServer(&mcp.Implementation{
-		Name:    "chihiro",
-		Version: "0.1.0",
-	}, nil)
+		srv := mcp.NewServer(&mcp.Implementation{
+			Name:    "chihiro",
+			Version: "0.1.0",
+		}, nil)
 
-	mcp.AddTool(srv, listClustersTool(), wrapHandler(handleListClusters, deps))
-	mcp.AddTool(srv, describeClusterTool(), wrapHandler(handleDescribeCluster, deps))
-	mcp.AddTool(srv, getVersionsTool(), wrapHandler(handleGetVersions, deps))
-	mcp.AddTool(srv, getLimitsTool(), wrapHandler(handleGetLimits, deps))
-	mcp.AddTool(srv, getParametersTool(), wrapHandler(handleGetParameters, deps))
-	mcp.AddTool(srv, previewClusterTool(), wrapHandler(handlePreviewCluster, deps))
-	mcp.AddTool(srv, createClusterTool(), wrapHandler(handleCreateCluster, deps))
-	mcp.AddTool(srv, deleteClusterTool(), wrapHandler(handleDeleteCluster, deps))
-	mcp.AddTool(srv, editClusterTool(), wrapHandler(handleEditCluster, deps))
+		mcp.AddTool(srv, listClustersTool(), wrapHandler(handleListClusters, deps))
+		mcp.AddTool(srv, describeClusterTool(), wrapHandler(handleDescribeCluster, deps))
+		mcp.AddTool(srv, getVersionsTool(), wrapHandler(handleGetVersions, deps))
+		mcp.AddTool(srv, getLimitsTool(), wrapHandler(handleGetLimits, deps))
+		mcp.AddTool(srv, getParametersTool(), wrapHandler(handleGetParameters, deps))
+		mcp.AddTool(srv, previewClusterTool(), wrapHandler(handlePreviewCluster, deps))
+		mcp.AddTool(srv, createClusterTool(), wrapHandler(handleCreateCluster, deps))
+		mcp.AddTool(srv, deleteClusterTool(), wrapHandler(handleDeleteCluster, deps))
+		mcp.AddTool(srv, editClusterTool(), wrapHandler(handleEditCluster, deps))
 
-	hdl := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
 		return srv
 	}, nil)
 
-	hdl.ServeHTTP(w, r)
+	return h
+}
+
+// ServeHTTP implements http.Handler so the MCP endpoint can be mounted on Gin.
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.handler.ServeHTTP(w, r)
 }
 
 // toolHandlerFunc is the signature for our tool handler functions.

@@ -230,6 +230,144 @@ The label key, value, and derived selectors are defined in
 `internal/cluster/manager.go` (`ReadOnlyLabel`, `ReadOnlySelector`,
 `MutableSelector`).
 
+## MCP (Model Context Protocol)
+
+Chihiro exposes an MCP endpoint at `/mcp` that lets LLM clients (Claude,
+Cursor, OpenCode, etc.) manage clusters through natural language. The server
+implements the Streamable HTTP transport.
+
+### Configuration
+
+| Key           | Env var                | Type   | Description                                                           |
+| ------------- | ---------------------- | ------ | --------------------------------------------------------------------- |
+| `mcp.api_key` | `CHIHIRO_MCP_API_KEY`  | string | API key for authenticating MCP requests. Leave empty to disable MCP. |
+
+```yaml
+mcp:
+  api_key: 'your-secret-key'
+```
+
+```sh
+export CHIHIRO_MCP_API_KEY="$(openssl rand -base64 32)"
+```
+
+> In devmode, MCP is always enabled and authentication is skipped — no API key
+> required.
+
+### Tools
+
+The MCP server exposes these tools:
+
+| Tool              | Description                                              |
+| ----------------- | -------------------------------------------------------- |
+| `list_clusters`   | List all clusters visible to the authenticated user.     |
+| `describe_cluster`| Get detailed info about a cluster by name.               |
+| `get_versions`    | List available Kubernetes versions.                      |
+| `get_limits`      | Get fleet resource limits and current usage.             |
+| `get_parameters`  | Discover template parameters for cluster creation.       |
+| `preview_cluster` | Render cluster YAML without creating it.                 |
+| `create_cluster`  | Create a new CAPI cluster with given options.            |
+| `delete_cluster`  | Delete a cluster by name.                                |
+| `edit_cluster`    | Edit a cluster field (version, nodes, CP, groups, etc.). |
+
+### Connecting clients
+
+#### OpenCode
+
+Add to your `opencode.json`:
+
+```json
+{
+  "mcp": {
+    "chihiro": {
+      "type": "http",
+      "url": "http://localhost:8080/mcp"
+    }
+  }
+}
+```
+
+In production, add the API key header:
+
+```json
+{
+  "mcp": {
+    "chihiro": {
+      "type": "http",
+      "url": "http://localhost:8080/mcp",
+      "headers": {
+        "Authorization": "Bearer your-secret-key"
+      }
+    }
+  }
+}
+```
+
+#### Claude Desktop
+
+Add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "chihiro": {
+      "type": "streamableHttp",
+      "url": "http://localhost:8080/mcp"
+    }
+  }
+}
+```
+
+In production, add the API key header:
+
+```json
+{
+  "mcpServers": {
+    "chihiro": {
+      "type": "streamableHttp",
+      "url": "http://localhost:8080/mcp",
+      "headers": {
+        "Authorization": "Bearer your-secret-key"
+      }
+    }
+  }
+}
+```
+
+#### Claude Code
+
+```sh
+# Devmode (no auth)
+claude mcp add --transport http chihiro http://localhost:8080/mcp
+
+# Production (with API key)
+claude mcp add --transport http chihiro http://localhost:8080/mcp \
+  --header "Authorization: Bearer your-secret-key"
+```
+
+#### Cursor
+
+Add to Settings > MCP Servers:
+
+- **Type**: HTTP
+- **URL**: `http://localhost:8080/mcp`
+- **Headers** (production only): `Authorization: Bearer your-secret-key`
+
+### Example workflow
+
+Once connected, you can ask the LLM to manage clusters:
+
+> "List all my clusters"
+> "Create a cluster named staging-1 with 3 worker nodes running v1.31.2 for the platform-admins group"
+> "How many clusters am I allowed to create?"
+> "What Kubernetes versions are available?"
+> "Show me the details of staging-1"
+> "Scale staging-1 to 5 worker nodes"
+> "Delete staging-1"
+
+The LLM will call the appropriate MCP tools, which enforce the same
+authorization rules as the web UI.
+
 ## Cluster templating
 
 `cluster.template` is the CAPI `Cluster` YAML rendered on creation. It contains
