@@ -17,6 +17,7 @@ import (
 	"github.com/Bealvio/chihiro/internal/auth"
 	"github.com/Bealvio/chihiro/internal/cluster"
 	"github.com/Bealvio/chihiro/internal/kubeconfig"
+	"github.com/Bealvio/chihiro/internal/mcp"
 	"github.com/Bealvio/chihiro/internal/middleware"
 	"github.com/Bealvio/chihiro/internal/watcher"
 )
@@ -31,6 +32,7 @@ type Server struct {
 	devmode       bool
 	version       string
 	commit        string
+	mcpHandler    *mcp.Handler
 }
 
 var clusterNameRegex = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
@@ -71,6 +73,7 @@ func NewServer(w *watcher.ClusterWatcher, m *cluster.Manager, authMiddleware *au
 		devmode:       devmode,
 		version:       version,
 		commit:        commit,
+		mcpHandler:    mcp.NewHandler(w, m),
 	}
 
 	s.setupRoutes()
@@ -111,6 +114,17 @@ func (s *Server) setupRoutes() {
 	s.router.GET("/auth/logout", s.auth.HandleLogout)
 	s.router.GET("/health", s.handleHealth)
 	s.router.GET("/favicon.ico", s.handleFavicon)
+
+	// MCP endpoint — uses its own API key auth, not the OIDC session.
+	// Only mounted when an API key is configured or devmode is active.
+	mcpEnabled := s.devmode || viper.GetString("mcp.api_key") != ""
+	if mcpEnabled {
+		s.router.POST("/mcp", gin.WrapF(s.mcpHandler.ServeHTTP))
+		s.router.GET("/mcp", gin.WrapF(s.mcpHandler.ServeHTTP))
+		slog.Info("MCP endpoint enabled", "devmode", s.devmode)
+	} else {
+		slog.Info("MCP endpoint disabled: no API key configured")
+	}
 
 	protected := s.router.Group("/")
 	protected.Use(s.auth.RequireAuth())

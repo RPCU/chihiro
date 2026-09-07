@@ -110,6 +110,9 @@ func runServer() {
 			viper.Set("cluster.limits.max_total_cp", maxCP)
 		}
 	}
+	if env := os.Getenv("CHIHIRO_MCP_API_KEY"); env != "" {
+		viper.Set("mcp.api_key", env)
+	}
 	if err := cluster.ValidateConfig(); err != nil {
 		slog.Error(err.Error())
 		os.Exit(1)

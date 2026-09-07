@@ -13,6 +13,12 @@ redis:
   addr: "redis:6379"
   session_ttl: 3600
 
+# MCP (Model Context Protocol) — exposes cluster management tools for LLM clients.
+mcp:
+  # API key for authenticating MCP requests via Authorization: Bearer <key>.
+  # In devmode, authentication is skipped. Set via CHIHIRO_MCP_API_KEY env var.
+  api_key: ""
+
 cluster:
   domain: "clusters.example.com"
   port: 443
