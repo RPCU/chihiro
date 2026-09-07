@@ -73,7 +73,7 @@ func NewServer(w *watcher.ClusterWatcher, m *cluster.Manager, authMiddleware *au
 		devmode:       devmode,
 		version:       version,
 		commit:        commit,
-		mcpHandler:    mcp.NewHandler(w, m),
+		mcpHandler:    mcp.NewHandler(w, m, version),
 	}
 
 	s.setupRoutes()

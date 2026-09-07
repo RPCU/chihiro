@@ -301,7 +301,10 @@ func handleDescribeCluster(_ context.Context, _ *mcp.CallToolRequest, input map[
 func handleGetVersions(_ context.Context, _ *mcp.CallToolRequest, _ map[string]any, _ *toolDeps) (*mcp.CallToolResult, any, error) {
 	versions := viper.GetStringSlice("cluster.available_versions")
 	if len(versions) == 0 {
-		versions = []string{"v1.34.0", "v1.33.2", "v1.32.5", "v1.31.8"}
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{&mcp.TextContent{Text: "No available_versions configured in cluster config. Set cluster.available_versions in config.yaml or CHIHIRO_AVAILABLE_VERSIONS env var."}},
+		}, nil, nil
 	}
 
 	data, err := json.MarshalIndent(versions, "", "  ")
@@ -451,10 +454,6 @@ func handleCreateCluster(ctx context.Context, _ *mcp.CallToolRequest, input map[
 	}
 
 	adminGroups := viper.GetStringSlice("cluster.admin_groups")
-	if len(adminGroups) == 0 {
-		adminGroups = []string{"cluster-admin"}
-	}
-
 	isAdmin := auth.CheckUserGroups(deps.user.Groups, adminGroups)
 
 	if !isAdmin {

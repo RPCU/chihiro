@@ -18,7 +18,7 @@ type Handler struct {
 
 // NewHandler creates a new MCP handler with all tools registered.
 // Authentication happens per-request inside the getClient callback.
-func NewHandler(w *watcher.ClusterWatcher, m *cluster.Manager) *Handler {
+func NewHandler(w *watcher.ClusterWatcher, m *cluster.Manager, version string) *Handler {
 	h := &Handler{}
 
 	h.handler = mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
@@ -37,7 +37,7 @@ func NewHandler(w *watcher.ClusterWatcher, m *cluster.Manager) *Handler {
 
 		srv := mcp.NewServer(&mcp.Implementation{
 			Name:    "chihiro",
-			Version: "0.1.0",
+			Version: version,
 		}, nil)
 
 		mcp.AddTool(srv, listClustersTool(), wrapHandler(handleListClusters, deps))
