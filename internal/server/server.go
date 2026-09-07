@@ -215,7 +215,26 @@ func (s *Server) fieldEditable(c *gin.Context, user *auth.UserInfo, field string
 	return true
 }
 
-func (s *Server) canUserModifyCluster(user *auth.UserInfo, cluster *watcher.ClusterInfo) bool {
+// canUserModifyCluster reports whether the user may mutate the given cluster.
+// Every mutating endpoint funnels through here after resolving the target via
+// watcher.GetClustersForUser, so it is the single place that can veto a write.
+func (s *Server) canUserModifyCluster(user *auth.UserInfo, target *watcher.ClusterInfo) bool {
+	// Read-only clusters are visible but not managed by chihiro. Nobody may
+	// mutate them, not even an admin and not in devmode: the label states that
+	// another system owns the object, so writing to it would fight that owner.
+	// The check is deliberately first and unconditional, and lives here rather
+	// than in each handler so a future mutating endpoint inherits it for free.
+	if target.ReadOnly {
+		slog.Warn(
+			"Mutation blocked: cluster is marked read-only",
+			"username", user.Username,
+			"cluster", target.Name,
+			"namespace", target.Namespace,
+			"label", cluster.ReadOnlyLabel,
+		)
+		return false
+	}
+
 	adminGroups := viper.GetStringSlice("cluster.admin_groups")
 	isAdmin := auth.CheckUserGroups(user.Groups, adminGroups)
 
@@ -233,10 +252,10 @@ func (s *Server) canUserModifyCluster(user *auth.UserInfo, cluster *watcher.Clus
 		return false
 	}
 
-	isCreator := cluster.Creator == user.Username
+	isCreator := target.Creator == user.Username
 	sharesGroup := false
 	for _, userGroup := range user.Groups {
-		if slices.Contains(cluster.Groups, userGroup) {
+		if slices.Contains(target.Groups, userGroup) {
 			sharesGroup = true
 		}
 		if sharesGroup {

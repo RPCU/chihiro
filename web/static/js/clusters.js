@@ -42,12 +42,21 @@ function updateClusters(clusters) {
         // Element IDs embed namespace/name; sanitize to a safe charset so
         // they can't break out of the attribute or collide with markup.
         const idKey = `${cluster.namespace}-${cluster.name}`.replace(/[^A-Za-z0-9_.-]/g, '_');
+        // Clusters labelled chihiro.io/readonly=true are shown but never
+        // managed by chihiro. Flag them so the card visibly explains why no
+        // edit or delete controls are present.
+        const readOnlyBadge = cluster.readOnly
+            ? `<div class="cluster-status read-only" title="This cluster is not managed by chihiro. It is shown for visibility and its kubeconfig can be downloaded, but it cannot be edited or deleted here."><span class="material-symbols-outlined">lock</span>Read-only</div>`
+            : '';
 
         return `
-            <div class="cluster-card">
+            <div class="cluster-card${cluster.readOnly ? ' read-only' : ''}">
                 <div class="cluster-header">
                     <h3 class="cluster-name">${nameHtml}</h3>
-                    <div class="cluster-status ${statusClass}">${escapeHtml(statusText)}</div>
+                    <div class="cluster-badges">
+                        ${readOnlyBadge}
+                        <div class="cluster-status ${statusClass}">${escapeHtml(statusText)}</div>
+                    </div>
                 </div>
 
                 <div class="cluster-details">
@@ -277,6 +286,13 @@ function toggleMoreDetails(id, btn) {
 // Permissions
 
 function canEditCluster(cluster) {
+    // Read-only clusters are visible but not managed by chihiro, so no one can
+    // mutate them regardless of group membership. Returning false here removes
+    // the delete button and every per-field edit button in one place. The
+    // server enforces the same rule in canUserModifyCluster; this is purely to
+    // avoid showing controls that would always fail.
+    if (cluster.readOnly) return false;
+
     console.log('Checking edit permissions for cluster:', cluster.name, 'User groups:', userGroups, 'Cluster groups:', cluster.groups, 'IsAdmin:', isAdmin, 'Creator:', cluster.creator, 'Current user:', currentUser?.username, 'IsCreatorGroupMember:', isCreatorGroupMember);
 
     // Admins can edit any cluster

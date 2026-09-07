@@ -109,7 +109,20 @@ type ClusterInfo struct {
 	// the OIDC configuration is observable. The UI greys out the kubeconfig
 	// download until both APIEndpoint and KubeconfigReady are set.
 	KubeconfigReady bool `json:"kubeconfigReady"`
+	// ReadOnly reports that the cluster carries the cluster.ReadOnlyLabel and
+	// is therefore visible in chihiro but not managed by it. Chihiro never
+	// mutates such a cluster: every mutating endpoint is refused by
+	// canUserModifyCluster, and the UI hides the delete and edit controls.
+	// Downloading a kubeconfig is still permitted, since that only issues a
+	// per-user OIDC exec credential and changes nothing on the cluster.
+	ReadOnly bool `json:"readOnly"`
 }
+
+// clusterSelectors are the label selectors the watcher lists and watches. A
+// Kubernetes label selector cannot express OR across two different keys, so
+// each kind of cluster gets its own List/Watch and the results are merged into
+// the shared cache. A cluster matched by both selectors is stored once.
+var clusterSelectors = []string{cluster.ManagedSelector, cluster.ReadOnlySelector}
 
 // OIDCProber reports whether a kubeconfig (with its OIDC apiserver flags) can
 // currently be reconstituted for a cluster. It is satisfied by
@@ -133,6 +146,37 @@ type ClusterWatcher struct {
 	// avoid an import cycle with the kubeconfig package. May be nil, in which
 	// case readiness probing is skipped and KubeconfigReady stays false.
 	oidcProber OIDCProber
+	// clusterSources tracks, per cluster, which of the clusterSelectors
+	// currently match it. A watch scoped to a selector reports a Deleted event
+	// when an object merely stops matching that selector — for example when an
+	// operator removes the read-only label from a chihiro-managed cluster.
+	// Dropping the cache entry on the first such event would make a cluster
+	// that still exists vanish from the dashboard until the next full refresh,
+	// so an entry is only removed once no selector matches it anymore.
+	clusterSources map[string]map[string]bool
+}
+
+// addSourceLocked records that selector currently matches name.
+// Callers must hold cw.mutex for writing.
+func (cw *ClusterWatcher) addSourceLocked(name, selector string) {
+	if cw.clusterSources[name] == nil {
+		cw.clusterSources[name] = make(map[string]bool, len(clusterSelectors))
+	}
+	cw.clusterSources[name][selector] = true
+}
+
+// dropSourceLocked records that selector no longer matches name and reports
+// whether the cluster has now stopped matching every selector, meaning the
+// object is genuinely gone rather than merely relabelled.
+// Callers must hold cw.mutex for writing.
+func (cw *ClusterWatcher) dropSourceLocked(name, selector string) bool {
+	sources := cw.clusterSources[name]
+	delete(sources, selector)
+	if len(sources) > 0 {
+		return false
+	}
+	delete(cw.clusterSources, name)
+	return true
 }
 
 // SetOIDCProber registers the prober used to determine whether each cluster's
@@ -238,12 +282,13 @@ func NewClusterWatcher(kubeconfig string) (*ClusterWatcher, error) {
 	slog.Info("Initialized cluster watcher", "admin_groups", adminGroups)
 
 	return &ClusterWatcher{
-		client:      client,
-		resolver:    resolver,
-		clusterGVR:  clusterGVR,
-		clusters:    make(map[string]*ClusterInfo),
-		clients:     make(map[*websocket.Conn]*UserWebSocketClient),
-		adminGroups: adminGroups,
+		client:         client,
+		resolver:       resolver,
+		clusterGVR:     clusterGVR,
+		clusters:       make(map[string]*ClusterInfo),
+		clusterSources: make(map[string]map[string]bool),
+		clients:        make(map[*websocket.Conn]*UserWebSocketClient),
+		adminGroups:    adminGroups,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: checkWebSocketOrigin,
 		},
@@ -251,31 +296,39 @@ func NewClusterWatcher(kubeconfig string) (*ClusterWatcher, error) {
 }
 
 func (cw *ClusterWatcher) Start(ctx context.Context) {
-	go cw.watchClusters(ctx)
+	for _, selector := range clusterSelectors {
+		go cw.watchClusters(ctx, selector)
+	}
 	go cw.loadInitialClusters(ctx)
 	go cw.monitorClusterReadiness(ctx)
 }
 
+// listClusters returns the CAPI Clusters matching the given label selector.
+func (cw *ClusterWatcher) listClusters(ctx context.Context, selector string) (*unstructured.UnstructuredList, error) {
+	return cw.client.Resource(cw.clusterGVR).List(ctx, metav1.ListOptions{LabelSelector: selector})
+}
+
 func (cw *ClusterWatcher) loadInitialClusters(ctx context.Context) {
-	gvr := cw.clusterGVR
+	// Load chihiro-managed clusters and read-only ones. A failure on either
+	// selector is logged and skipped rather than aborting: surfacing the
+	// clusters we did manage to list beats showing an empty dashboard.
+	for _, selector := range clusterSelectors {
+		list, err := cw.listClusters(ctx, selector)
+		if err != nil {
+			slog.Error("Failed to load initial clusters", "selector", selector, "error", err)
+			continue
+		}
 
-	// Load clusters managed by chihiro
-	list, err := cw.client.Resource(gvr).List(ctx, metav1.ListOptions{
-		LabelSelector: "app.kubernetes.io/managed-by=chihiro",
-	})
-	if err != nil {
-		slog.Error("Failed to load initial clusters", "error", err)
-		return
+		slog.Info("Loaded initial clusters", "selector", selector, "count", len(list.Items))
+
+		cw.mutex.Lock()
+		for _, item := range list.Items {
+			clusterInfo := cw.parseCluster(&item)
+			cw.clusters[clusterInfo.Name] = clusterInfo
+			cw.addSourceLocked(clusterInfo.Name, selector)
+		}
+		cw.mutex.Unlock()
 	}
-
-	slog.Info("Loaded initial clusters", "count", len(list.Items))
-
-	cw.mutex.Lock()
-	for _, item := range list.Items {
-		clusterInfo := cw.parseCluster(&item)
-		cw.clusters[clusterInfo.Name] = clusterInfo
-	}
-	cw.mutex.Unlock()
 
 	cw.broadcastUpdate()
 
@@ -285,7 +338,9 @@ func (cw *ClusterWatcher) loadInitialClusters(ctx context.Context) {
 	cw.checkAllClustersReadiness()
 }
 
-func (cw *ClusterWatcher) watchClusters(ctx context.Context) {
+// watchClusters keeps the cluster cache in sync with every CAPI Cluster
+// matching selector. One goroutine runs per entry in clusterSelectors.
+func (cw *ClusterWatcher) watchClusters(ctx context.Context, selector string) {
 	gvr := cw.clusterGVR
 
 	for {
@@ -293,12 +348,11 @@ func (cw *ClusterWatcher) watchClusters(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		default:
-			// Watch clusters managed by chihiro
 			watcher, err := cw.client.Resource(gvr).Watch(ctx, metav1.ListOptions{
-				LabelSelector: "app.kubernetes.io/managed-by=chihiro",
+				LabelSelector: selector,
 			})
 			if err != nil {
-				slog.Error("Failed to create cluster watcher", "error", err)
+				slog.Error("Failed to create cluster watcher", "selector", selector, "error", err)
 				time.Sleep(5 * time.Second)
 				continue
 			}
@@ -327,8 +381,17 @@ func (cw *ClusterWatcher) watchClusters(ctx context.Context) {
 						clusterInfo.KubeconfigReady = prev.KubeconfigReady
 					}
 					cw.clusters[clusterInfo.Name] = clusterInfo
+					cw.addSourceLocked(clusterInfo.Name, selector)
 				case watch.Deleted:
-					delete(cw.clusters, clusterInfo.Name)
+					// A selector-scoped watch also reports Deleted when the
+					// object stops matching this selector but still exists, so
+					// only evict once no selector matches it anymore. When the
+					// cluster still matches another selector the cache entry is
+					// left untouched: that selector's watch delivers the
+					// authoritative post-relabel state as a Modified event.
+					if cw.dropSourceLocked(clusterInfo.Name, selector) {
+						delete(cw.clusters, clusterInfo.Name)
+					}
 				}
 				cw.mutex.Unlock()
 
@@ -360,6 +423,10 @@ func (cw *ClusterWatcher) parseCluster(obj *unstructured.Unstructured) *ClusterI
 		Status:      status,
 		Labels:      labels,
 		Annotations: annotations,
+		// Derived from the live object rather than from the selector that
+		// surfaced it, so a chihiro-managed cluster that was later frozen with
+		// the read-only label is recognised on the managed watch too.
+		ReadOnly: cluster.IsReadOnlyLabelValue(obj.GetLabels()[cluster.ReadOnlyLabel]),
 	}
 
 	slog.Debug("Parsing cluster", "name", obj.GetName(), "namespace", obj.GetNamespace())
@@ -912,18 +979,18 @@ func (cw *ClusterWatcher) GetClusterGVR() schema.GroupVersionResource {
 func (cw *ClusterWatcher) RefreshAndBroadcast(ctx context.Context) {
 	slog.Debug("Forcing cluster list refresh and broadcast")
 
-	gvr := cw.clusterGVR
-
-	// Fetch latest clusters from Kubernetes
-	list, err := cw.client.Resource(gvr).List(ctx, metav1.ListOptions{
-		LabelSelector: "app.kubernetes.io/managed-by=chihiro",
-	})
-	if err != nil {
-		slog.Error("Failed to refresh clusters", "error", err)
-		return
+	// Fetch the latest clusters for every selector before touching the cache,
+	// so a partial failure cannot wipe clusters we simply failed to re-list.
+	lists := make(map[string]*unstructured.UnstructuredList, len(clusterSelectors))
+	for _, selector := range clusterSelectors {
+		list, err := cw.listClusters(ctx, selector)
+		if err != nil {
+			slog.Error("Failed to refresh clusters", "selector", selector, "error", err)
+			return
+		}
+		slog.Debug("Refreshed cluster list", "selector", selector, "count", len(list.Items))
+		lists[selector] = list
 	}
-
-	slog.Debug("Refreshed cluster list", "count", len(list.Items))
 
 	// Update internal cache, preserving last-probed kubeconfig readiness so a
 	// refresh doesn't flip the UI button off until the next periodic probe.
@@ -933,12 +1000,16 @@ func (cw *ClusterWatcher) RefreshAndBroadcast(ctx context.Context) {
 		prevReady[name] = c.KubeconfigReady
 	}
 	cw.clusters = make(map[string]*ClusterInfo)
-	for _, item := range list.Items {
-		clusterInfo := cw.parseCluster(&item)
-		if r, ok := prevReady[clusterInfo.Name]; ok {
-			clusterInfo.KubeconfigReady = r
+	cw.clusterSources = make(map[string]map[string]bool)
+	for _, selector := range clusterSelectors {
+		for _, item := range lists[selector].Items {
+			clusterInfo := cw.parseCluster(&item)
+			if r, ok := prevReady[clusterInfo.Name]; ok {
+				clusterInfo.KubeconfigReady = r
+			}
+			cw.clusters[clusterInfo.Name] = clusterInfo
+			cw.addSourceLocked(clusterInfo.Name, selector)
 		}
-		cw.clusters[clusterInfo.Name] = clusterInfo
 	}
 	cw.mutex.Unlock()
 

@@ -85,6 +85,12 @@ Install both with `go install mvdan.cc/gofumpt@latest` and
   `canUserModifyCluster` -> per-field `fieldEditable` (the latter two live in
   `internal/server/server.go`). Any new mutating endpoint MUST replicate this
   chain. Do not trust client-supplied namespaces or groups without checks.
+- `canUserModifyCluster` also rejects clusters with `ReadOnly: true` (label
+  `chihiro.io/readonly=true`) unconditionally, before any admin/creator check.
+  This cannot be bypassed — not by admins, not in devmode. A new mutating
+  endpoint inherits this guard automatically if it funnels through
+  `canUserModifyCluster`. Read-only clusters are visible (their kubeconfig can
+  be downloaded) but never mutated by chihiro.
 
 ## Security notes (current state — review before changing)
 

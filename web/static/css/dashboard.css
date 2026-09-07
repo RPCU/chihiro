@@ -293,6 +293,25 @@
             color: #0d9488;
         }
 
+        .cluster-status.read-only {
+            background-color: rgba(95, 99, 104, 0.12);
+            color: var(--md-sys-color-on-surface-variant, #5f6368);
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .cluster-badges {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .cluster-card.read-only {
+            opacity: 0.85;
+            border-left: 3px solid var(--md-sys-color-outline, #caced9);
+        }
+
         .cluster-details {
             display: grid;
             grid-template-columns: repeat(2, 1fr);

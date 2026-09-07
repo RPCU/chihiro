@@ -16,6 +16,51 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+// Cluster discovery labels.
+//
+// Chihiro surfaces two kinds of CAPI Cluster in the dashboard:
+//
+//   - Managed clusters carry ManagedByLabel=ManagedByValue. Chihiro created them
+//     and may mutate them, subject to the usual authorization chain.
+//   - Read-only clusters carry ReadOnlyLabel="true". They are listed and their
+//     kubeconfig can be downloaded, but chihiro never mutates them. This exists
+//     so clusters owned by another tool (GitOps, clusterctl, a different chihiro
+//     instance) can be made visible without handing chihiro write access. The
+//     label is also honoured on chihiro-managed clusters, where it freezes them.
+const (
+	ManagedByLabel = "app.kubernetes.io/managed-by"
+	ManagedByValue = "chihiro"
+	ReadOnlyLabel  = "chihiro.io/readonly"
+)
+
+// Label selectors derived from the discovery labels above.
+//
+// A Kubernetes label selector cannot express OR across two different keys, so
+// the watcher runs one List/Watch per selector and merges the results. Note that
+// an inequality selector such as ReadOnlyLabel!=true also matches objects that
+// do not carry the key at all, which is what MutableSelector relies on.
+const (
+	// ManagedSelector matches every chihiro-managed cluster, including any that
+	// have since been frozen with the read-only label. The watcher uses it so a
+	// frozen cluster stays visible in the dashboard.
+	ManagedSelector = ManagedByLabel + "=" + ManagedByValue
+
+	// ReadOnlySelector matches every cluster explicitly marked visible-but-not-managed.
+	ReadOnlySelector = ReadOnlyLabel + "=true"
+
+	// MutableSelector matches only the clusters chihiro may actually act on. It
+	// backs the cluster.limits accounting: read-only clusters are not chihiro's
+	// to provision, so they must not consume the configured quota.
+	MutableSelector = ManagedSelector + "," + ReadOnlyLabel + "!=true"
+)
+
+// IsReadOnlyLabelValue reports whether a ReadOnlyLabel value marks the cluster
+// as read-only. Matching is case-insensitive and tolerates surrounding
+// whitespace so a hand-edited manifest behaves predictably.
+func IsReadOnlyLabelValue(value string) bool {
+	return strings.EqualFold(strings.TrimSpace(value), "true")
+}
+
 // WorkerGroup describes a group of worker nodes. The named fields below are
 // retained for backward compatibility with previously stored annotations and
 // the watcher/limit code, but worker groups are otherwise generic: every value
@@ -174,9 +219,10 @@ func (m *Manager) ValidateClusterLimits(ctx context.Context, newClusterNodes, ne
 	// Get current cluster count and total nodes (only Chihiro-managed clusters)
 	gvr := m.clusterGVR
 
-	// Filter to only Chihiro-managed clusters
+	// Filter to only the clusters chihiro provisions. Read-only clusters are
+	// owned by another tool, so they do not consume the configured quota.
 	list, err := m.client.Resource(gvr).List(ctx, metav1.ListOptions{
-		LabelSelector: "app.kubernetes.io/managed-by=chihiro",
+		LabelSelector: MutableSelector,
 	})
 	if err != nil {
 		slog.Error("Failed to list Chihiro-managed clusters for limits validation", "error", err)
@@ -256,10 +302,10 @@ func parseReplicas(value interface{}, clusterName string) int32 {
 }
 
 // CountControlPlaneReplicas returns the total control plane replicas across all
-// Chihiro-managed clusters.
+// Chihiro-managed clusters, excluding read-only ones.
 func (m *Manager) CountControlPlaneReplicas(ctx context.Context) (int32, error) {
 	list, err := m.client.Resource(m.clusterGVR).List(ctx, metav1.ListOptions{
-		LabelSelector: "app.kubernetes.io/managed-by=chihiro",
+		LabelSelector: MutableSelector,
 	})
 	if err != nil {
 		slog.Error("Failed to list Chihiro-managed clusters for control plane count", "error", err)
@@ -493,7 +539,7 @@ func (m *Manager) buildClusterObject(ctx context.Context, req CreateClusterReque
 	if labels == nil {
 		labels = make(map[string]string)
 	}
-	labels["app.kubernetes.io/managed-by"] = "chihiro"
+	labels[ManagedByLabel] = ManagedByValue
 	labels["cluster.x-k8s.io/cluster-name"] = req.Name
 	labels["sveltos-agent"] = "present"
 	labels["topology.cluster.x-k8s.io/owned"] = ""
@@ -669,7 +715,7 @@ func (m *Manager) ValidateNodeCountUpdate(ctx context.Context, clusterName, name
 
 	// Calculate total nodes across all Chihiro-managed clusters (including this update)
 	list, err := m.client.Resource(gvr).List(ctx, metav1.ListOptions{
-		LabelSelector: "app.kubernetes.io/managed-by=chihiro",
+		LabelSelector: MutableSelector,
 	})
 	if err != nil {
 		slog.Error("Failed to list Chihiro-managed clusters for node count validation", "error", err)
@@ -775,7 +821,7 @@ func (m *Manager) ValidateControlPlaneUpdate(ctx context.Context, clusterName, n
 	gvr := m.clusterGVR
 
 	list, err := m.client.Resource(gvr).List(ctx, metav1.ListOptions{
-		LabelSelector: "app.kubernetes.io/managed-by=chihiro",
+		LabelSelector: MutableSelector,
 	})
 	if err != nil {
 		slog.Error("Failed to list Chihiro-managed clusters for control plane validation", "error", err)

@@ -26,7 +26,9 @@ func (s *Server) handleLoginPage(c *gin.Context) {
 func (s *Server) handleHome(c *gin.Context) {
 	user, _ := auth.GetUserFromContext(c.Request.Context())
 	slog.Debug("Serving dashboard page", "username", getUsernameOrAnon(user), "remote_addr", c.ClientIP())
-	c.HTML(http.StatusOK, "dashboard.html", nil)
+	c.HTML(http.StatusOK, "dashboard.html", gin.H{
+		"devmode": s.devmode,
+	})
 }
 
 func (s *Server) handleHealth(c *gin.Context) {
@@ -165,12 +167,19 @@ func (s *Server) handleGetLimits(c *gin.Context) {
 	maxTotalNodes := viper.GetInt("cluster.limits.max_total_nodes")
 	maxTotalCP := viper.GetInt("cluster.limits.max_total_cp")
 
-	clusters := s.watcher.GetClusters()
-	currentClusters := len(clusters)
+	// Limits govern what chihiro provisions. Read-only clusters are owned by
+	// another system and can never be created, scaled or deleted here, so they
+	// must not consume the quota. This mirrors the MutableSelector used by the
+	// manager's server-side limit validation.
+	currentClusters := 0
 	currentTotalNodes := int32(0)
 
-	for _, cluster := range clusters {
-		currentTotalNodes += cluster.Nodes
+	for _, cl := range s.watcher.GetClusters() {
+		if cl.ReadOnly {
+			continue
+		}
+		currentClusters++
+		currentTotalNodes += cl.Nodes
 	}
 
 	currentTotalCP, err := s.manager.CountControlPlaneReplicas(c.Request.Context())

@@ -7,6 +7,106 @@ custom resources and exposes a dashboard to create, edit, and delete workload
 clusters. Auth is OIDC, sessions live in Redis, and the UI updates in real time
 over WebSockets. More details on Chihiro's forms can be found here: <https://banh-canh.github.io/posts/chihiro-forms/>
 
+## Quickstart (devmode)
+
+Run a minimal Chihiro instance locally for development — no OIDC provider, no
+Redis.
+
+### Requirements
+
+- **Go** 1.26+
+- A Kubernetes cluster with **Cluster API (CAPI)** installed and accessible via
+  `kubectl`
+- `kubectl` configured with a valid kubeconfig
+
+### 1. Create a minimal config
+
+Create `config.yaml` in the repo root:
+
+```yaml
+host: '0.0.0.0'
+port: 8080
+
+# No oidc or redis sections needed in devmode.
+
+cluster:
+  domain: 'clusters.dev.local'
+  port: 6443
+  available_versions: ['v1.31.2']
+  admin_groups: ['devmode']
+  creator_groups: ['devmode']
+  limits:
+    max_clusters: 3
+    max_total_nodes: 10
+    max_total_cp: 3
+
+  injections:
+    name:
+      path: metadata.name
+    version:
+      path: spec.topology.version
+      label: 'Kubernetes Version'
+    controlPlaneReplicas:
+      path: spec.topology.controlPlane.replicas
+      label: 'Control Plane Replicas'
+    nodes:
+      path: spec.topology.workers.machineDeployments[0].replicas
+      label: 'Worker Nodes'
+
+  template: |
+    apiVersion: cluster.x-k8s.io/v1beta2
+    kind: Cluster
+    metadata:
+      name: ignore
+      namespace: default
+    spec:
+      topology:
+        class: my-cluster-class
+        version: '0.0.0'
+        controlPlane:
+          replicas: {{ chihiro.controlPlaneReplicas }}
+        workers:
+          machineDeployments:
+            - class: default-worker
+              name: worker
+              replicas: {{ chihiro.nodes }}
+
+  parameters:
+    controlPlaneReplicas:
+      label: 'Control Plane Replicas'
+      type: number
+      default: '1'
+      min: 1
+      max: 5
+    nodes:
+      label: 'Worker Nodes'
+      type: number
+      default: '1'
+      min: 0
+      max: 10
+```
+
+### 2. Start Chihiro
+
+```sh
+go run . serve --devmode --config=config.yaml
+```
+
+Open <http://localhost:8080> in your browser. You are automatically logged in
+as the `devmode` user with full admin access — no login screen, no Redis, no
+OIDC required.
+
+### 3. Build the binary (optional)
+
+```sh
+go build -o chihiro .
+./chihiro serve --devmode --config=config.yaml
+```
+
+> **Note:** devmode is for local development only. It disables authentication
+> entirely and uses a cookie-based session store. Never run devmode in
+> production.
+
 ## Configuration
 
 Settings are read from `config.yaml` and can be overridden with environment
@@ -95,6 +195,40 @@ cluster:
     max_total_nodes: 10
     max_total_cp: 9
 ```
+
+### Read-only clusters
+
+Clusters carrying the label `chihiro.io/readonly: "true"` are visible in the
+dashboard but never mutated by chihiro. This exists so clusters owned by
+another tool (GitOps, `clusterctl`, a different chihiro instance) can be
+surfaced without handing chihiro write access.
+
+Behaviour:
+
+- **Visible**: the watcher discovers read-only clusters via a dedicated
+  `List`/`Watch` and merges them into the same dashboard as managed ones.
+- **No mutation**: every mutating endpoint is refused with HTTP 403, regardless
+  of user role. The UI hides the Delete button and all per-field Edit buttons.
+- **Kubeconfig still works**: the kubeconfig download issues a per-user OIDC
+  exec credential and touches nothing on the cluster itself.
+- **Quota excluded**: read-only clusters do not count toward
+  `cluster.limits.max_clusters`, `max_total_nodes`, or `max_total_cp`.
+- **Admin-only by default**: `canUserAccessCluster` denies non-admins when
+  `chihiro.io/groups` is absent. To share a read-only cluster with a team,
+  add the `chihiro.io/groups` annotation to it — the same annotation used on
+  managed clusters.
+- **Freezes a managed cluster**: adding the label to a cluster that chihiro
+  created also freezes it. Removing the label restores full mutability.
+
+Example:
+
+```sh
+kubectl label cluster my-foreign-cluster chihiro.io/readonly=true
+```
+
+The label key, value, and derived selectors are defined in
+`internal/cluster/manager.go` (`ReadOnlyLabel`, `ReadOnlySelector`,
+`MutableSelector`).
 
 ## Cluster templating
 
