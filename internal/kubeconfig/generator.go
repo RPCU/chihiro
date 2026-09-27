@@ -265,7 +265,17 @@ func (g *Generator) getControlPlane(ctx context.Context, clusterObj *unstructure
 		cpGVR, err = g.resolver.GVRForControlPlaneKind(cpKind)
 	}
 	if err != nil {
-		slog.Error("Failed to resolve control plane resource", "cluster_name", clusterObj.GetName(), "cp_kind", cpKind, "cp_api_version", cpAPIVersion, "error", err)
+		slog.Error(
+			"Failed to resolve control plane resource",
+			"cluster_name",
+			clusterObj.GetName(),
+			"cp_kind",
+			cpKind,
+			"cp_api_version",
+			cpAPIVersion,
+			"error",
+			err,
+		)
 		return nil, fmt.Errorf("failed to resolve control plane resource: %v", err)
 	}
 
@@ -384,7 +394,11 @@ func (g *Generator) extractOIDCConfig(controlPlane *unstructured.Unstructured) (
 	return oidcConfig, nil
 }
 
-func (g *Generator) getClusterEndpoint(cluster *watcher.ClusterInfo, clusterSpec map[string]interface{}, controlPlane *unstructured.Unstructured) (string, error) {
+func (g *Generator) getClusterEndpoint(
+	cluster *watcher.ClusterInfo,
+	clusterSpec map[string]interface{},
+	controlPlane *unstructured.Unstructured,
+) (string, error) {
 	slog.Debug("Getting cluster endpoint", "cluster_name", cluster.Name)
 
 	// 1. Check the watcher's APIEndpoint (populated from status.controlPlaneEndpoint in parseCluster).
@@ -489,7 +503,17 @@ func (g *Generator) getClusterCAData(ctx context.Context, cluster *watcher.Clust
 		caSecretName := fmt.Sprintf("%s-ca", base)
 		tried = append(tried, caSecretName)
 		if data, err := g.readSecretData(ctx, cluster.Namespace, caSecretName); err != nil {
-			slog.Warn("Could not read cluster CA secret", "cluster_name", cluster.Name, "namespace", cluster.Namespace, "secret_name", caSecretName, "error", err)
+			slog.Warn(
+				"Could not read cluster CA secret",
+				"cluster_name",
+				cluster.Name,
+				"namespace",
+				cluster.Namespace,
+				"secret_name",
+				caSecretName,
+				"error",
+				err,
+			)
 		} else if data != nil {
 			for _, key := range []string{"tls.crt", "ca.crt"} {
 				if ca, ok := data[key].(string); ok && ca != "" {
@@ -505,7 +529,17 @@ func (g *Generator) getClusterCAData(ctx context.Context, cluster *watcher.Clust
 		kubeconfigSecretName := fmt.Sprintf("%s-kubeconfig", base)
 		tried = append(tried, kubeconfigSecretName)
 		if data, err := g.readSecretData(ctx, cluster.Namespace, kubeconfigSecretName); err != nil {
-			slog.Warn("Could not read kubeconfig secret", "cluster_name", cluster.Name, "namespace", cluster.Namespace, "secret_name", kubeconfigSecretName, "error", err)
+			slog.Warn(
+				"Could not read kubeconfig secret",
+				"cluster_name",
+				cluster.Name,
+				"namespace",
+				cluster.Namespace,
+				"secret_name",
+				kubeconfigSecretName,
+				"error",
+				err,
+			)
 		} else if data != nil {
 			if ca := caFromKubeconfigSecret(data, "value"); ca != "" {
 				slog.Info("Retrieved cluster CA certificate from kubeconfig secret", "cluster_name", cluster.Name, "secret_name", kubeconfigSecretName)
@@ -519,7 +553,17 @@ func (g *Generator) getClusterCAData(ctx context.Context, cluster *watcher.Clust
 		adminKubeconfigSecretName := fmt.Sprintf("%s-admin-kubeconfig", base)
 		tried = append(tried, adminKubeconfigSecretName)
 		if data, err := g.readSecretData(ctx, cluster.Namespace, adminKubeconfigSecretName); err != nil {
-			slog.Warn("Could not read admin kubeconfig secret", "cluster_name", cluster.Name, "namespace", cluster.Namespace, "secret_name", adminKubeconfigSecretName, "error", err)
+			slog.Warn(
+				"Could not read admin kubeconfig secret",
+				"cluster_name",
+				cluster.Name,
+				"namespace",
+				cluster.Namespace,
+				"secret_name",
+				adminKubeconfigSecretName,
+				"error",
+				err,
+			)
 		} else if data != nil {
 			if ca := caFromKubeconfigSecret(data, "super-admin.conf", "admin.conf", "value"); ca != "" {
 				slog.Info("Retrieved cluster CA certificate from admin kubeconfig secret", "cluster_name", cluster.Name, "secret_name", adminKubeconfigSecretName)

@@ -161,6 +161,43 @@ Things that are correct and must not regress:
 - Do not place secrets in `config.yaml`, code, logs, or kubeconfig output.
 - Do not switch logging away from `slog`.
 
+## Git workflow (branch -> PR -> CI -> validation)
+
+When asked to ship a change, follow this sequence:
+
+1. **Validate locally first.** Run `go build ./...`, `go vet ./...`,
+   `go test ./...`, `gofmt -l .` (plus `gofumpt -d .` and
+   `golines --max-len=160 . --dry-run`) until everything is clean.
+2. **Ask for validation.** Summarize the changes and ask the user to confirm
+   before any git write (see Golden rules). Never commit without that
+   confirmation.
+3. **Create a branch** off up-to-date `main`:
+   ```sh
+   git fetch origin
+   git checkout main && git pull --rebase origin main
+   git checkout -b <type>/<short-description>   # e.g. fix/session-refresh
+   ```
+4. **Commit** with the repo's gitmoji style (`feat ✨:`, `fix 🐛 (scope):`, ...).
+5. **Rebase on main** (if `main` moved while working) and **push**:
+   ```sh
+   git fetch origin
+   git rebase origin/main
+   git push -u origin <branch>
+   ```
+   Never force-push to `main`; `--force-with-lease` on your own feature branch
+   only, and only after asking.
+6. **Open a PR** targeting `main` with `gh pr create --base main`, describing
+   the what/why and how it was tested.
+7. **Wait for CI.** Watch the checks until they finish:
+   ```sh
+   gh pr checks --watch
+   ```
+   All required checks (`linting.yaml`, `nix-build.yaml`) must pass. If one
+   fails, fix, commit, push, and re-watch — do not declare done on red CI.
+8. **Ask for final validation.** Report the PR link and CI status back to the
+   user and wait for their approval before merging. Never merge a PR unless
+   the user explicitly asks for it.
+
 ## CI / CD
 
 Three GitHub Actions workflows under `.github/workflows/`:

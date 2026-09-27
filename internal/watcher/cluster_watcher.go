@@ -843,7 +843,17 @@ func (cw *ClusterWatcher) checkAllClustersReadiness() {
 		if cluster.APIEndpoint != "" {
 			newReady := cw.testAPIEndpointReachability(cluster.APIEndpoint)
 			if cluster.Ready != newReady {
-				slog.Info("Cluster readiness changed", "cluster", cluster.Name, "endpoint", cluster.APIEndpoint, "old_ready", cluster.Ready, "new_ready", newReady)
+				slog.Info(
+					"Cluster readiness changed",
+					"cluster",
+					cluster.Name,
+					"endpoint",
+					cluster.APIEndpoint,
+					"old_ready",
+					cluster.Ready,
+					"new_ready",
+					newReady,
+				)
 				res.newReady = newReady
 				res.readyChange = true
 			}

@@ -303,7 +303,11 @@ func handleGetVersions(_ context.Context, _ *mcp.CallToolRequest, _ map[string]a
 	if len(versions) == 0 {
 		return &mcp.CallToolResult{
 			IsError: true,
-			Content: []mcp.Content{&mcp.TextContent{Text: "No available_versions configured in cluster config. Set cluster.available_versions in config.yaml or CHIHIRO_AVAILABLE_VERSIONS env var."}},
+			Content: []mcp.Content{
+				&mcp.TextContent{
+					Text: "No available_versions configured in cluster config. Set cluster.available_versions in config.yaml or CHIHIRO_AVAILABLE_VERSIONS env var.",
+				},
+			},
 		}, nil, nil
 	}
 
