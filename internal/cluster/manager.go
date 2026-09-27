@@ -255,7 +255,25 @@ func (m *Manager) ValidateClusterLimits(ctx context.Context, newClusterNodes, ne
 		}
 	}
 
-	slog.Debug("Validating cluster limits (Chihiro-managed only)", "current_clusters", currentClusters, "max_clusters", maxClusters, "current_nodes", currentTotalNodes, "max_nodes", maxTotalNodes, "current_cp", currentTotalCP, "max_cp", maxTotalCP, "new_cluster_nodes", newClusterNodes, "new_cluster_cp", newClusterCPReplicas)
+	slog.Debug(
+		"Validating cluster limits (Chihiro-managed only)",
+		"current_clusters",
+		currentClusters,
+		"max_clusters",
+		maxClusters,
+		"current_nodes",
+		currentTotalNodes,
+		"max_nodes",
+		maxTotalNodes,
+		"current_cp",
+		currentTotalCP,
+		"max_cp",
+		maxTotalCP,
+		"new_cluster_nodes",
+		newClusterNodes,
+		"new_cluster_cp",
+		newClusterCPReplicas,
+	)
 
 	if maxClusters > 0 && currentClusters >= maxClusters {
 		slog.Warn("Cluster creation blocked: cluster limit exceeded", "current_clusters", currentClusters, "max_clusters", maxClusters)
@@ -265,15 +283,47 @@ func (m *Manager) ValidateClusterLimits(ctx context.Context, newClusterNodes, ne
 	// Check total nodes limit
 	totalAfterCreation := currentTotalNodes + newClusterNodes
 	if maxTotalNodes > 0 && totalAfterCreation > int32(maxTotalNodes) {
-		slog.Warn("Cluster creation blocked: total node limit would be exceeded", "current_nodes", currentTotalNodes, "new_nodes", newClusterNodes, "total_would_be", totalAfterCreation, "max_nodes", maxTotalNodes)
-		return fmt.Errorf("total node limit exceeded: current %d nodes, adding %d would result in %d nodes (maximum %d allowed)", currentTotalNodes, newClusterNodes, totalAfterCreation, maxTotalNodes)
+		slog.Warn(
+			"Cluster creation blocked: total node limit would be exceeded",
+			"current_nodes",
+			currentTotalNodes,
+			"new_nodes",
+			newClusterNodes,
+			"total_would_be",
+			totalAfterCreation,
+			"max_nodes",
+			maxTotalNodes,
+		)
+		return fmt.Errorf(
+			"total node limit exceeded: current %d nodes, adding %d would result in %d nodes (maximum %d allowed)",
+			currentTotalNodes,
+			newClusterNodes,
+			totalAfterCreation,
+			maxTotalNodes,
+		)
 	}
 
 	// Check total control plane replicas limit
 	cpAfterCreation := currentTotalCP + newClusterCPReplicas
 	if maxTotalCP > 0 && cpAfterCreation > int32(maxTotalCP) {
-		slog.Warn("Cluster creation blocked: total control plane limit would be exceeded", "current_cp", currentTotalCP, "new_cp", newClusterCPReplicas, "total_would_be", cpAfterCreation, "max_cp", maxTotalCP)
-		return fmt.Errorf("total control plane limit exceeded: current %d control plane replicas, adding %d would result in %d (maximum %d allowed)", currentTotalCP, newClusterCPReplicas, cpAfterCreation, maxTotalCP)
+		slog.Warn(
+			"Cluster creation blocked: total control plane limit would be exceeded",
+			"current_cp",
+			currentTotalCP,
+			"new_cp",
+			newClusterCPReplicas,
+			"total_would_be",
+			cpAfterCreation,
+			"max_cp",
+			maxTotalCP,
+		)
+		return fmt.Errorf(
+			"total control plane limit exceeded: current %d control plane replicas, adding %d would result in %d (maximum %d allowed)",
+			currentTotalCP,
+			newClusterCPReplicas,
+			cpAfterCreation,
+			maxTotalCP,
+		)
 	}
 
 	slog.Debug("Cluster limits validation passed")
@@ -497,7 +547,10 @@ func (m *Manager) buildClusterObject(ctx context.Context, req CreateClusterReque
 	remainingMatches := chihiroParamRegex.FindAllString(templateStr, -1)
 	if len(remainingMatches) > 0 {
 		slog.Error("Unreplaced template placeholders remain", "cluster_name", req.Name, "remaining", remainingMatches)
-		return nil, "", fmt.Errorf("unresolved template parameters: %v — provide values in the form or set defaults in cluster.parameters config", remainingMatches)
+		return nil, "", fmt.Errorf(
+			"unresolved template parameters: %v — provide values in the form or set defaults in cluster.parameters config",
+			remainingMatches,
+		)
 	}
 
 	// Parse YAML template into unstructured object
@@ -601,7 +654,19 @@ func (m *Manager) CreateCluster(ctx context.Context, req CreateClusterRequest) e
 		return fmt.Errorf("failed to create cluster: %v", err)
 	}
 
-	slog.Info("Successfully created cluster", "name", req.Name, "namespace", namespace, "nodes", req.Nodes, "control_plane_replicas", req.ControlPlaneReplicas, "version", req.Version)
+	slog.Info(
+		"Successfully created cluster",
+		"name",
+		req.Name,
+		"namespace",
+		namespace,
+		"nodes",
+		req.Nodes,
+		"control_plane_replicas",
+		req.ControlPlaneReplicas,
+		"version",
+		req.Version,
+	)
 	return nil
 }
 
@@ -745,11 +810,41 @@ func (m *Manager) ValidateNodeCountUpdate(ctx context.Context, clusterName, name
 		}
 	}
 
-	slog.Debug("Validating node count update (Chihiro-managed only)", "cluster", clusterName, "current_nodes", currentClusterNodes, "new_nodes", newNodeCount, "total_nodes_after", totalNodes, "max_nodes", maxTotalNodes)
+	slog.Debug(
+		"Validating node count update (Chihiro-managed only)",
+		"cluster",
+		clusterName,
+		"current_nodes",
+		currentClusterNodes,
+		"new_nodes",
+		newNodeCount,
+		"total_nodes_after",
+		totalNodes,
+		"max_nodes",
+		maxTotalNodes,
+	)
 
 	if totalNodes > int32(maxTotalNodes) {
-		slog.Warn("Node count update blocked: total node limit exceeded", "cluster", clusterName, "current_nodes", currentClusterNodes, "new_nodes", newNodeCount, "total_would_be", totalNodes, "max_nodes", maxTotalNodes)
-		return fmt.Errorf("total node limit exceeded: updating cluster %s to %d nodes would result in %d total nodes, maximum %d allowed", clusterName, newNodeCount, totalNodes, maxTotalNodes)
+		slog.Warn(
+			"Node count update blocked: total node limit exceeded",
+			"cluster",
+			clusterName,
+			"current_nodes",
+			currentClusterNodes,
+			"new_nodes",
+			newNodeCount,
+			"total_would_be",
+			totalNodes,
+			"max_nodes",
+			maxTotalNodes,
+		)
+		return fmt.Errorf(
+			"total node limit exceeded: updating cluster %s to %d nodes would result in %d total nodes, maximum %d allowed",
+			clusterName,
+			newNodeCount,
+			totalNodes,
+			maxTotalNodes,
+		)
 	}
 
 	slog.Debug("Node count update validation passed")
@@ -844,11 +939,37 @@ func (m *Manager) ValidateControlPlaneUpdate(ctx context.Context, clusterName, n
 		}
 	}
 
-	slog.Debug("Validating control plane update (Chihiro-managed only)", "cluster", clusterName, "new_cp", newReplicas, "total_cp_after", totalCP, "max_cp", maxTotalCP)
+	slog.Debug(
+		"Validating control plane update (Chihiro-managed only)",
+		"cluster",
+		clusterName,
+		"new_cp",
+		newReplicas,
+		"total_cp_after",
+		totalCP,
+		"max_cp",
+		maxTotalCP,
+	)
 
 	if totalCP > int32(maxTotalCP) {
-		slog.Warn("Control plane update blocked: total control plane limit exceeded", "cluster", clusterName, "new_cp", newReplicas, "total_would_be", totalCP, "max_cp", maxTotalCP)
-		return fmt.Errorf("total control plane limit exceeded: updating cluster %s to %d control plane replicas would result in %d total, maximum %d allowed", clusterName, newReplicas, totalCP, maxTotalCP)
+		slog.Warn(
+			"Control plane update blocked: total control plane limit exceeded",
+			"cluster",
+			clusterName,
+			"new_cp",
+			newReplicas,
+			"total_would_be",
+			totalCP,
+			"max_cp",
+			maxTotalCP,
+		)
+		return fmt.Errorf(
+			"total control plane limit exceeded: updating cluster %s to %d control plane replicas would result in %d total, maximum %d allowed",
+			clusterName,
+			newReplicas,
+			totalCP,
+			maxTotalCP,
+		)
 	}
 
 	slog.Debug("Control plane update validation passed")
@@ -1008,7 +1129,15 @@ func (m *Manager) ValidateVersionUpgrade(ctx context.Context, clusterName, names
 	}
 
 	if !versionFound {
-		slog.Warn("Requested version not in available versions list", "cluster", clusterName, "requested_version", newVersion, "available_versions", availableVersions)
+		slog.Warn(
+			"Requested version not in available versions list",
+			"cluster",
+			clusterName,
+			"requested_version",
+			newVersion,
+			"available_versions",
+			availableVersions,
+		)
 		return fmt.Errorf("version %s is not available for upgrade. Available versions: %v", newVersion, availableVersions)
 	}
 
@@ -1038,7 +1167,15 @@ func (m *Manager) ValidateVersionUpgrade(ctx context.Context, clusterName, names
 
 	// Compare versions to ensure upgrade only
 	if !isVersionNewer(newVersion, currentVersion) {
-		slog.Warn("Version upgrade blocked: new version is not newer", "cluster", clusterName, "current_version", currentVersion, "requested_version", newVersion)
+		slog.Warn(
+			"Version upgrade blocked: new version is not newer",
+			"cluster",
+			clusterName,
+			"current_version",
+			currentVersion,
+			"requested_version",
+			newVersion,
+		)
 		return fmt.Errorf("version %s is not newer than current version %s. Only upgrades are allowed", newVersion, currentVersion)
 	}
 
@@ -1232,7 +1369,17 @@ func (m *Manager) UpdateClusterWorkerGroups(ctx context.Context, clusterName, na
 		return fmt.Errorf("failed to update cluster: %v", err)
 	}
 
-	slog.Info("Successfully updated cluster worker groups", "cluster", clusterName, "namespace", namespace, "groups", len(groups), "total_replicas", totalReplicas)
+	slog.Info(
+		"Successfully updated cluster worker groups",
+		"cluster",
+		clusterName,
+		"namespace",
+		namespace,
+		"groups",
+		len(groups),
+		"total_replicas",
+		totalReplicas,
+	)
 	return nil
 }
 
