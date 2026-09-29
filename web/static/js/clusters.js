@@ -6,6 +6,12 @@ function updateClusters(clusters) {
     const container = document.getElementById('clustersContainer');
     const emptyState = document.getElementById('emptyState');
 
+    if (DETAIL_VIEW) {
+        // The list is already filtered to what this user may see, so a
+        // missing cluster means it doesn't exist or isn't accessible.
+        clusters = currentClustersList.filter(c => c.name === DETAIL_VIEW.name && c.namespace === DETAIL_VIEW.namespace);
+    }
+
     if (!clusters || clusters.length === 0) {
         container.style.display = 'none';
         emptyState.style.display = 'block';
@@ -18,7 +24,7 @@ function updateClusters(clusters) {
     // Every update rebuilds the cards, which would snap scrollable panels
     // back to the top; remember their offsets and restore them below.
     const scrollOffsets = {};
-    container.querySelectorAll('.sveltos-scroll[id]').forEach(el => {
+    container.querySelectorAll('.panel-scroll[id]').forEach(el => {
         if (el.scrollTop > 0) scrollOffsets[el.id] = el.scrollTop;
     });
 
@@ -59,7 +65,7 @@ function updateClusters(clusters) {
         return `
             <div class="cluster-card${cluster.readOnly ? ' read-only' : ''}">
                 <div class="cluster-header">
-                    <h3 class="cluster-name">${nameHtml}</h3>
+                    <h3 class="cluster-name">${DETAIL_VIEW ? nameHtml : `<a href="${escapeHtml(clusterPageUrl(cluster))}" class="cluster-link" title="Open cluster page">${nameHtml}<span class="material-symbols-outlined">open_in_new</span></a>`}</h3>
                     <div class="cluster-badges">
                         ${readOnlyBadge}
                         ${renderSveltosBadge(cluster)}
@@ -167,6 +173,26 @@ function updateClusters(clusters) {
     }
 }
 
+// setupDetailView switches the dashboard shell into a single-cluster page:
+// no stats or create button, a back link, and a full-width card whose
+// sections are always expanded (see body.detail-view in dashboard.css).
+function setupDetailView() {
+    if (!DETAIL_VIEW) return;
+    document.body.classList.add('detail-view');
+    document.title = `${DETAIL_VIEW.name} - Chihiro`;
+    const title = document.getElementById('clustersTitle');
+    if (title) {
+        title.innerHTML = `<a href="/" class="btn btn-text btn-small back-link"><span class="material-symbols-outlined">arrow_back</span>All clusters</a>
+            <span class="detail-title">${escapeHtml(DETAIL_VIEW.namespace)}/${escapeHtml(DETAIL_VIEW.name)}</span>`;
+    }
+    const empty = document.getElementById('emptyState');
+    if (empty) {
+        empty.innerHTML = `<span class="material-symbols-outlined">search_off</span>
+            <h3>Cluster not found</h3>
+            <p>It doesn't exist or you don't have access to it. <a href="/">Back to all clusters</a></p>`;
+    }
+}
+
 // Update stats
 function updateStats(clusters) {
     const list = clusters || [];
@@ -224,8 +250,8 @@ function renderMoreDetails(cluster) {
         .sort();
     if (keys.length === 0) return '';
 
-    const id = `more-${cluster.namespace}-${cluster.name}`;
-    const isExpanded = expandedDetails.has(id);
+    const id = `more-${clusterDomId(cluster.namespace, cluster.name)}`;
+    const isExpanded = !!DETAIL_VIEW || expandedDetails.has(id);
     const nameJs = escapeJs(cluster.name);
     const nsJs = escapeJs(cluster.namespace);
     const boolKeys = [];
@@ -279,7 +305,7 @@ function renderMoreDetails(cluster) {
             <span class="material-symbols-outlined">expand_more</span>
         </button>
         <div class="more-details ${isExpanded ? 'expanded' : ''}" id="${id}">
-            ${rows}
+            <div class="panel-scroll" id="${id}-scroll">${rows}</div>
         </div>
     `;
 }
@@ -322,7 +348,7 @@ function renderSveltos(cluster) {
     if (!sv) return '';
 
     const id = `sveltos-${clusterDomId(cluster.namespace, cluster.name)}`;
-    const isExpanded = expandedDetails.has(id);
+    const isExpanded = !!DETAIL_VIEW || expandedDetails.has(id);
     const profiles = (sv.profiles || []).slice().sort((a, b) => bySveltosSeverity(a.state, b.state));
     const allDeployments = profiles.flatMap(p => p.deployments || []);
     const failing = allDeployments.filter(d => sveltosStatusClass(d.status) === 'not-ready').length;
@@ -374,7 +400,7 @@ function renderSveltos(cluster) {
             <span class="material-symbols-outlined">expand_more</span>
         </button>
         <div class="more-details sveltos-details ${isExpanded ? 'expanded' : ''}" id="${id}">
-            <div class="sveltos-scroll" id="${id}-scroll">${body}</div>
+            <div class="panel-scroll sveltos-scroll" id="${id}-scroll">${body}</div>
         </div>
     `;
 }

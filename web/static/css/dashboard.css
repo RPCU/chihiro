@@ -255,6 +255,7 @@
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
+            gap: 12px;
             margin-bottom: 16px;
         }
 
@@ -271,6 +272,7 @@
             font-size: 0.75rem;
             font-weight: 600;
             text-transform: uppercase;
+            white-space: nowrap;
         }
 
         .cluster-status.ready {
@@ -303,8 +305,11 @@
 
         .cluster-badges {
             display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-end;
             gap: 6px;
             align-items: center;
+            min-width: 0;
         }
 
         .cluster-card.read-only {
@@ -651,9 +656,9 @@
         .cluster-status.sveltos-badge .material-symbols-outlined {
             font-size: 0.95rem;
         }
-        /* Long add-on lists scroll inside the card instead of stretching it
-           (and every card in its grid row). */
-        .sveltos-scroll {
+        /* Long panels (add-ons, more details) scroll inside the card instead
+           of stretching it (and every card in its grid row). */
+        .panel-scroll {
             max-height: 280px;
             overflow-y: auto;
             overscroll-behavior: contain;
@@ -735,6 +740,105 @@
             word-break: break-word;
         }
 
+        .empty-state a {
+            color: var(--md-sys-color-primary);
+        }
+
+        /* Cluster name links to its dedicated page */
+        .cluster-link {
+            color: inherit;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .cluster-link .material-symbols-outlined {
+            font-size: 1rem;
+            opacity: 0;
+            color: var(--md-sys-color-primary);
+            transition: opacity 0.15s ease;
+        }
+        .cluster-link:hover,
+        .cluster-link:focus-visible {
+            color: var(--md-sys-color-primary);
+        }
+        .cluster-link:hover .material-symbols-outlined,
+        .cluster-link:focus-visible .material-symbols-outlined {
+            opacity: 1;
+        }
+        .clusters-title {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 0;
+        }
+
+        /* Dedicated cluster page (/clusters/<namespace>/<name>) */
+        body.detail-view #statsContainer,
+        body.detail-view #clustersSubtitle,
+        body.detail-view .create-action,
+        body.detail-view .more-details-toggle {
+            display: none !important;
+        }
+        body.detail-view .detail-title {
+            font-weight: 600;
+            word-break: break-all;
+        }
+        body.detail-view .back-link .material-symbols-outlined {
+            margin-right: 4px;
+        }
+        body.detail-view .cluster-grid {
+            grid-template-columns: 1fr;
+        }
+        body.detail-view .cluster-card:hover {
+            transform: none;
+        }
+        body.detail-view .cluster-details {
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        }
+        body.detail-view .more-details {
+            margin-top: 16px;
+        }
+        body.detail-view .more-details::before {
+            display: block;
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: var(--md-sys-color-on-surface);
+        }
+        body.detail-view .more-details:not(.sveltos-details)::before {
+            content: 'Parameters';
+        }
+        body.detail-view .sveltos-details::before {
+            content: 'Add-ons (Sveltos)';
+        }
+        body.detail-view .more-details:not(.sveltos-details) .panel-scroll {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 4px 16px;
+        }
+        body.detail-view .more-details .detail-item.full-width {
+            grid-column: 1 / -1;
+        }
+        body.detail-view .panel-scroll {
+            max-height: none;
+            overflow: visible;
+        }
+        body.detail-view .sveltos-scroll {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+            gap: 16px;
+        }
+        body.detail-view .sveltos-profile {
+            margin: 0;
+            padding: 12px;
+            border: 1px solid var(--md-sys-color-outline-variant);
+            border-radius: 12px;
+        }
+        body.detail-view .sveltos-profile-header {
+            position: static;
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             main.container {
@@ -751,6 +855,12 @@
             }
 
             .cluster-details {
+                grid-template-columns: 1fr;
+            }
+
+            body.detail-view .sveltos-scroll,
+            body.detail-view .more-details:not(.sveltos-details) .panel-scroll,
+            body.detail-view .cluster-details {
                 grid-template-columns: 1fr;
             }
         }

@@ -396,6 +396,10 @@ and, for each CAPI cluster (`spec.clusterType: Capi`), shows:
   (`Provisioned`, `Provisioning`, `Failed`, …) and failure message. A Helm
   release already managed by another profile shows as `Conflict`.
 
+Long panels scroll inside the card. Clicking a cluster's name opens its
+dedicated page (`/clusters/<namespace>/<name>`), which shows every section
+expanded at full width.
+
 The status is part of the cluster object, so it follows the same per-user
 access rules and is also returned by the MCP `describe_cluster` tool. If the
 ClusterSummary CRD is not installed, chihiro logs a warning and retries every

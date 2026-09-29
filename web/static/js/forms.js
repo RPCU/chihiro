@@ -123,6 +123,10 @@ function confirmDelete(btn) {
     .then(response => {
         if (response.ok) {
             closeDeleteModal();
+            if (DETAIL_VIEW) {
+                window.location.href = '/';
+                return;
+            }
             loadClusters(); // Refresh clusters
         } else {
             throw new Error('Failed to delete cluster');
@@ -139,6 +143,7 @@ function confirmDelete(btn) {
 
 // Initialize everything when page loads
 document.addEventListener('DOMContentLoaded', function() {
+    setupDetailView();
     loadUserInfo().then(() => {
         loadVersions();
         loadUserGroups();
