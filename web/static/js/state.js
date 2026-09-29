@@ -49,6 +49,22 @@ const paramResolvedDefaults = {};
 let refreshInterval;
 const REFRESH_INTERVAL = 30000; // 30 seconds
 
+// DETAIL_VIEW is {namespace, name} on a dedicated cluster page
+// (/clusters/<namespace>/<name>), null on the dashboard.
+const DETAIL_VIEW = (() => {
+    const m = window.location.pathname.match(/^\/clusters\/([^/]+)\/([^/]+)\/?$/);
+    if (!m) return null;
+    try {
+        return { namespace: decodeURIComponent(m[1]), name: decodeURIComponent(m[2]) };
+    } catch (_) {
+        return null;
+    }
+})();
+
+function clusterPageUrl(cluster) {
+    return `/clusters/${encodeURIComponent(cluster.namespace)}/${encodeURIComponent(cluster.name)}`;
+}
+
 function clusterKey(name, namespace) {
     return `${namespace}/${name}`;
 }

@@ -131,6 +131,9 @@ func (s *Server) setupRoutes() {
 	protected.Use(middleware.RateLimitMiddleware(apiRateLimiter))
 
 	protected.GET("/", s.handleHome)
+	// Dedicated cluster page: same dashboard shell, rendered client-side for a
+	// single cluster from the already access-filtered WebSocket/API data.
+	protected.GET("/clusters/:namespace/:name", s.handleHome)
 	protected.GET("/api/user", s.handleUserInfo)
 	protected.GET("/api/config", s.handleGetConfig)
 	protected.GET("/api/clusters", s.handleAPI)

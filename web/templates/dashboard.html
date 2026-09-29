@@ -52,16 +52,18 @@
         <!-- Clusters Section -->
         <div class="card">
             <div class="card-title">
-                <span class="material-symbols-outlined">developer_board</span>
-                <span>Kubernetes Clusters</span>
-                <div style="margin-left: auto;">
+                <span id="clustersTitle" class="clusters-title">
+                    <span class="material-symbols-outlined">developer_board</span>
+                    <span>Kubernetes Clusters</span>
+                </span>
+                <div style="margin-left: auto;" class="create-action">
                     <button class="btn btn-filled" onclick="openCreateModal()">
                         <span class="material-symbols-outlined" style="margin-right: 8px;">add</span>
                         Create Cluster
                     </button>
                 </div>
             </div>
-            <div class="card-subtitle">
+            <div class="card-subtitle" id="clustersSubtitle">
                 Manage your Kubernetes clusters with real-time monitoring
             </div>
 
