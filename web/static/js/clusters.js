@@ -21,13 +21,6 @@ function updateClusters(clusters) {
     container.style.display = 'grid';
     emptyState.style.display = 'none';
 
-    // Every update rebuilds the cards, which would snap scrollable panels
-    // back to the top; remember their offsets and restore them below.
-    const scrollOffsets = {};
-    container.querySelectorAll('.panel-scroll[id]').forEach(el => {
-        if (el.scrollTop > 0) scrollOffsets[el.id] = el.scrollTop;
-    });
-
     container.innerHTML = clusters.map(cluster => {
         const age = getAge(cluster.createdAt);
         const statusText = cluster.available ? 'Available' : (cluster.phase || 'Unknown');
@@ -117,9 +110,7 @@ function updateClusters(clusters) {
                     </div>
                 </div>
 
-                ${renderMoreDetails(cluster)}
-
-                ${renderSveltos(cluster)}
+                ${DETAIL_VIEW ? renderMoreDetails(cluster) + renderSveltos(cluster) : ''}
 
                 <div class="cluster-groups">
                     <div class="groups-label">
@@ -135,6 +126,11 @@ function updateClusters(clusters) {
                 </div>
 
                 <div class="cluster-actions">
+                    ${DETAIL_VIEW ? '' : `
+                    <a class="btn btn-small btn-tonal" href="${escapeHtml(clusterPageUrl(cluster))}">
+                        <span class="material-symbols-outlined" style="margin-right: 4px;">open_in_full</span>
+                        More details
+                    </a>`}
                     ${cluster.apiEndpoint && cluster.kubeconfigReady ? `
                     <button class="btn btn-filled btn-small"
                             id="kubeconfig-btn-${idKey}"
@@ -165,11 +161,6 @@ function updateClusters(clusters) {
     // updates rebuild the whole container's innerHTML).
     for (const [key, state] of Object.entries(kubeconfigStatus)) {
         renderKubeconfigStatus(key, state);
-    }
-
-    for (const [id, top] of Object.entries(scrollOffsets)) {
-        const el = document.getElementById(id);
-        if (el) el.scrollTop = top;
     }
 }
 
@@ -251,7 +242,6 @@ function renderMoreDetails(cluster) {
     if (keys.length === 0) return '';
 
     const id = `more-${clusterDomId(cluster.namespace, cluster.name)}`;
-    const isExpanded = !!DETAIL_VIEW || expandedDetails.has(id);
     const nameJs = escapeJs(cluster.name);
     const nsJs = escapeJs(cluster.namespace);
     const boolKeys = [];
@@ -300,12 +290,8 @@ function renderMoreDetails(cluster) {
     const rows = boolRow + otherRows;
 
     return `
-        <button class="more-details-toggle ${isExpanded ? 'expanded' : ''}" onclick="toggleMoreDetails('${id}', this)">
-            <span>${isExpanded ? 'Hide details' : 'More details'}</span>
-            <span class="material-symbols-outlined">expand_more</span>
-        </button>
-        <div class="more-details ${isExpanded ? 'expanded' : ''}" id="${id}">
-            <div class="panel-scroll" id="${id}-scroll">${rows}</div>
+        <div class="more-details expanded" id="${id}">
+            <div class="panel-grid">${rows}</div>
         </div>
     `;
 }
@@ -348,7 +334,6 @@ function renderSveltos(cluster) {
     if (!sv) return '';
 
     const id = `sveltos-${clusterDomId(cluster.namespace, cluster.name)}`;
-    const isExpanded = !!DETAIL_VIEW || expandedDetails.has(id);
     const profiles = (sv.profiles || []).slice().sort((a, b) => bySveltosSeverity(a.state, b.state));
     const allDeployments = profiles.flatMap(p => p.deployments || []);
     const failing = allDeployments.filter(d => sveltosStatusClass(d.status) === 'not-ready').length;
@@ -393,42 +378,12 @@ function renderSveltos(cluster) {
         `${allDeployments.length} deployment${allDeployments.length === 1 ? '' : 's'}`];
     if (failing) counts.push(`${failing} failing`);
     if (pending) counts.push(`${pending} pending`);
-    const label = `Add-ons · ${counts.join(' · ')}`;
     return `
-        <button class="more-details-toggle ${isExpanded ? 'expanded' : ''}" onclick="toggleSveltos('${id}', this)">
-            <span>${escapeHtml(label)}</span>
-            <span class="material-symbols-outlined">expand_more</span>
-        </button>
-        <div class="more-details sveltos-details ${isExpanded ? 'expanded' : ''}" id="${id}">
-            <div class="panel-scroll sveltos-scroll" id="${id}-scroll">${body}</div>
+        <div class="more-details sveltos-details expanded" id="${id}">
+            <div class="sveltos-counts">${escapeHtml(counts.join(' · '))}</div>
+            <div class="sveltos-grid">${body}</div>
         </div>
     `;
-}
-
-function toggleSveltos(id, btn) {
-    const panel = document.getElementById(id);
-    if (!panel) return;
-    const expanded = panel.classList.toggle('expanded');
-    btn.classList.toggle('expanded', expanded);
-    if (expanded) {
-        expandedDetails.add(id);
-    } else {
-        expandedDetails.delete(id);
-    }
-}
-
-function toggleMoreDetails(id, btn) {
-    const panel = document.getElementById(id);
-    if (!panel) return;
-    const expanded = panel.classList.toggle('expanded');
-    btn.classList.toggle('expanded', expanded);
-    btn.querySelector('span').textContent = expanded ? 'Hide details' : 'More details';
-    // Persist state so re-renders keep the panel open/closed.
-    if (expanded) {
-        expandedDetails.add(id);
-    } else {
-        expandedDetails.delete(id);
-    }
 }
 
 // Permissions

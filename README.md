@@ -389,16 +389,16 @@ and, for each CAPI cluster (`spec.clusterType: Capi`), shows:
 
 - a header badge with the worst state across all profiles targeting it
   (`Failed` > `Removing` > `Provisioning` > `Paused` > `Provisioned`);
-- an **Add-ons** panel listing each `ClusterProfile`/`Profile` that targets the
+- an **Add-ons (Sveltos)** section on the cluster page listing each `ClusterProfile`/`Profile` that targets the
   cluster, the `ClusterSummary` linking them, and every deployment the profile
   defines — Helm charts (`helmCharts`), resources (`policyRefs`) and Kustomize
   sources (`kustomizationRefs`) — each with its Sveltos feature status
   (`Provisioned`, `Provisioning`, `Failed`, …) and failure message. A Helm
   release already managed by another profile shows as `Conflict`.
 
-Long panels scroll inside the card. Clicking a cluster's name opens its
-dedicated page (`/clusters/<namespace>/<name>`), which shows every section
-expanded at full width.
+The add-ons badge shows on every card; the full list (and all parameters) is
+on each cluster's dedicated page (`/clusters/<namespace>/<name>`), opened with
+the card's **More details** button or by clicking the cluster name.
 
 The status is part of the cluster object, so it follows the same per-user
 access rules and is also returned by the MCP `describe_cluster` tool. If the

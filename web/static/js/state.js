@@ -23,11 +23,6 @@ let editVersionData = null;
 let availableVersions = [];
 let editParameterData = null;
 
-// Tracks which "More details" panels are open so the expanded state
-// survives full re-renders (the cluster list is rebuilt on every
-// websocket/health-check update).
-const expandedDetails = new Set();
-
 // Parameters already surfaced elsewhere on the card (main details grid
 // and groups section), excluded from "More details" to avoid duplicates.
 const MORE_DETAILS_EXCLUDE = new Set([
