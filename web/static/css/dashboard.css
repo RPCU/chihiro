@@ -651,6 +651,22 @@
         .cluster-status.sveltos-badge .material-symbols-outlined {
             font-size: 0.95rem;
         }
+        /* Long add-on lists scroll inside the card instead of stretching it
+           (and every card in its grid row). */
+        .sveltos-scroll {
+            max-height: 280px;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            padding-right: 6px;
+            scrollbar-width: thin;
+        }
+        .sveltos-profile-header {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            padding: 2px 0;
+            background: var(--md-sys-color-surface-container-highest);
+        }
         .sveltos-profile {
             margin-bottom: 12px;
             font-size: 0.85rem;

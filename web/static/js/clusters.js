@@ -15,6 +15,13 @@ function updateClusters(clusters) {
     container.style.display = 'grid';
     emptyState.style.display = 'none';
 
+    // Every update rebuilds the cards, which would snap scrollable panels
+    // back to the top; remember their offsets and restore them below.
+    const scrollOffsets = {};
+    container.querySelectorAll('.sveltos-scroll[id]').forEach(el => {
+        if (el.scrollTop > 0) scrollOffsets[el.id] = el.scrollTop;
+    });
+
     container.innerHTML = clusters.map(cluster => {
         const age = getAge(cluster.createdAt);
         const statusText = cluster.available ? 'Available' : (cluster.phase || 'Unknown');
@@ -152,6 +159,11 @@ function updateClusters(clusters) {
     // updates rebuild the whole container's innerHTML).
     for (const [key, state] of Object.entries(kubeconfigStatus)) {
         renderKubeconfigStatus(key, state);
+    }
+
+    for (const [id, top] of Object.entries(scrollOffsets)) {
+        const el = document.getElementById(id);
+        if (el) el.scrollTop = top;
     }
 }
 
@@ -291,6 +303,13 @@ function sveltosStatusClass(status) {
     }
 }
 
+// Worst first, so problems are visible without scrolling.
+const SVELTOS_SEVERITY = { 'not-ready': 0, 'pending': 1, 'read-only': 2, 'ready': 3 };
+
+function bySveltosSeverity(a, b) {
+    return SVELTOS_SEVERITY[sveltosStatusClass(a)] - SVELTOS_SEVERITY[sveltosStatusClass(b)];
+}
+
 function renderSveltosBadge(cluster) {
     const sv = cluster.sveltos;
     if (!sv || !sv.profiles || sv.profiles.length === 0) return '';
@@ -304,7 +323,10 @@ function renderSveltos(cluster) {
 
     const id = `sveltos-${clusterDomId(cluster.namespace, cluster.name)}`;
     const isExpanded = expandedDetails.has(id);
-    const profiles = sv.profiles || [];
+    const profiles = (sv.profiles || []).slice().sort((a, b) => bySveltosSeverity(a.state, b.state));
+    const allDeployments = profiles.flatMap(p => p.deployments || []);
+    const failing = allDeployments.filter(d => sveltosStatusClass(d.status) === 'not-ready').length;
+    const pending = allDeployments.filter(d => sveltosStatusClass(d.status) === 'pending').length;
 
     const body = profiles.length === 0
         ? '<div class="sveltos-empty">No Sveltos profile targets this cluster.</div>'
@@ -313,7 +335,9 @@ function renderSveltos(cluster) {
             const notes = [];
             if (p.paused) notes.push('<div class="sveltos-note">Reconciliation paused.</div>');
             if (p.failureMessage) notes.push(`<div class="sveltos-note error">${escapeHtml(p.failureMessage)}</div>`);
-            const deployments = (p.deployments || []).map(d => {
+            const deployments = (p.deployments || []).slice()
+                .sort((a, b) => bySveltosSeverity(a.status, b.status))
+                .map(d => {
                 const target = d.namespace ? `${d.namespace}/${d.name}` : d.name;
                 const applied = d.lastAppliedTime ? `Last applied ${new Date(d.lastAppliedTime).toLocaleString()}` : '';
                 return `
@@ -339,14 +363,18 @@ function renderSveltos(cluster) {
                 </div>`;
         }).join('');
 
-    const label = `Add-ons (${profiles.length})`;
+    const counts = [`${profiles.length} profile${profiles.length === 1 ? '' : 's'}`,
+        `${allDeployments.length} deployment${allDeployments.length === 1 ? '' : 's'}`];
+    if (failing) counts.push(`${failing} failing`);
+    if (pending) counts.push(`${pending} pending`);
+    const label = `Add-ons · ${counts.join(' · ')}`;
     return `
         <button class="more-details-toggle ${isExpanded ? 'expanded' : ''}" onclick="toggleSveltos('${id}', this)">
             <span>${escapeHtml(label)}</span>
             <span class="material-symbols-outlined">expand_more</span>
         </button>
         <div class="more-details sveltos-details ${isExpanded ? 'expanded' : ''}" id="${id}">
-            ${body}
+            <div class="sveltos-scroll" id="${id}-scroll">${body}</div>
         </div>
     `;
 }
