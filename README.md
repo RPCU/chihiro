@@ -368,6 +368,48 @@ Once connected, you can ask the LLM to manage clusters:
 The LLM will call the appropriate MCP tools, which enforce the same
 authorization rules as the web UI.
 
+## Sveltos integration
+
+Chihiro can show the add-on deployment status reported by
+[Sveltos](https://projectsveltos.github.io/sveltos/) on each cluster card. The
+integration is **opt-in** and read-only: chihiro never writes Sveltos objects.
+
+| Key               | Env var                   | Type | Default | Description                                   |
+| ----------------- | ------------------------- | ---- | ------- | --------------------------------------------- |
+| `sveltos.enabled` | `CHIHIRO_SVELTOS_ENABLED` | bool | `false` | Watch Sveltos ClusterSummaries and show them. |
+
+```yaml
+sveltos:
+  enabled: true
+```
+
+Sveltos creates one `ClusterSummary` (`config.projectsveltos.io/v1beta1`) per
+(profile, cluster) pair, in the cluster's namespace. Chihiro watches them all
+and, for each CAPI cluster (`spec.clusterType: Capi`), shows:
+
+- a header badge with the worst state across all profiles targeting it
+  (`Failed` > `Removing` > `Provisioning` > `Paused` > `Provisioned`);
+- an **Add-ons** panel listing each `ClusterProfile`/`Profile` that targets the
+  cluster, the `ClusterSummary` linking them, and every deployment the profile
+  defines — Helm charts (`helmCharts`), resources (`policyRefs`) and Kustomize
+  sources (`kustomizationRefs`) — each with its Sveltos feature status
+  (`Provisioned`, `Provisioning`, `Failed`, …) and failure message. A Helm
+  release already managed by another profile shows as `Conflict`.
+
+The status is part of the cluster object, so it follows the same per-user
+access rules and is also returned by the MCP `describe_cluster` tool. If the
+ClusterSummary CRD is not installed, chihiro logs a warning and retries every
+minute, so Sveltos can be installed after chihiro.
+
+The service account needs read access to ClusterSummaries (already included
+in `manifests/rbacs/rbacs.yaml`):
+
+```yaml
+- apiGroups: ['config.projectsveltos.io']
+  resources: ['clustersummaries']
+  verbs: ['get', 'list', 'watch']
+```
+
 ## Cluster templating
 
 `cluster.template` is the CAPI `Cluster` YAML rendered on creation. It contains

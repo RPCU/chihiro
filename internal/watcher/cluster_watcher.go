@@ -16,6 +16,7 @@ import (
 	"github.com/Bealvio/chihiro/internal/auth"
 	"github.com/Bealvio/chihiro/internal/capi"
 	"github.com/Bealvio/chihiro/internal/cluster"
+	"github.com/Bealvio/chihiro/internal/sveltos"
 	"github.com/gorilla/websocket"
 	"github.com/spf13/viper"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -116,6 +117,11 @@ type ClusterInfo struct {
 	// Downloading a kubeconfig is still permitted, since that only issues a
 	// per-user OIDC exec credential and changes nothing on the cluster.
 	ReadOnly bool `json:"readOnly"`
+	// Sveltos is the add-on deployment status reported by Sveltos
+	// ClusterSummaries targeting this cluster. It is nil (omitted) when the
+	// opt-in Sveltos integration is disabled, and has no profiles when the
+	// integration is enabled but no profile matches the cluster.
+	Sveltos *sveltos.ClusterStatus `json:"sveltos,omitempty"`
 }
 
 // clusterSelectors are the label selectors the watcher lists and watches. A
@@ -154,6 +160,50 @@ type ClusterWatcher struct {
 	// that still exists vanish from the dashboard until the next full refresh,
 	// so an entry is only removed once no selector matches it anymore.
 	clusterSources map[string]map[string]bool
+	// sveltosEnabled turns on the opt-in Sveltos integration; sveltosStatus
+	// is the latest per-cluster snapshot from the sveltos watcher, keyed by
+	// sveltos.ClusterKey(namespace, name).
+	sveltosEnabled bool
+	sveltosStatus  map[string]*sveltos.ClusterStatus
+}
+
+// EnableSveltos marks the Sveltos integration as enabled, so every cluster
+// carries a (possibly empty) Sveltos status. Call once during setup, before
+// Start.
+func (cw *ClusterWatcher) EnableSveltos() {
+	cw.mutex.Lock()
+	cw.sveltosEnabled = true
+	cw.mutex.Unlock()
+}
+
+// SetSveltosStatus replaces the Sveltos status snapshot, attaches it to every
+// cached cluster and pushes the update to connected clients.
+func (cw *ClusterWatcher) SetSveltosStatus(status map[string]*sveltos.ClusterStatus) {
+	cw.mutex.Lock()
+	cw.sveltosStatus = status
+	// Swap in shallow copies rather than mutating in place: pointers handed
+	// out by GetClustersForUser may be being marshalled concurrently.
+	for name, c := range cw.clusters {
+		updated := *c
+		cw.attachSveltosLocked(&updated)
+		cw.clusters[name] = &updated
+	}
+	cw.mutex.Unlock()
+
+	cw.broadcastUpdate()
+}
+
+// attachSveltosLocked sets c.Sveltos from the current snapshot.
+// Callers must hold cw.mutex and own c exclusively (not yet in the cache).
+func (cw *ClusterWatcher) attachSveltosLocked(c *ClusterInfo) {
+	if !cw.sveltosEnabled {
+		return
+	}
+	if st, ok := cw.sveltosStatus[sveltos.ClusterKey(c.Namespace, c.Name)]; ok {
+		c.Sveltos = st
+		return
+	}
+	c.Sveltos = &sveltos.ClusterStatus{Profiles: []sveltos.ProfileStatus{}}
 }
 
 // addSourceLocked records that selector currently matches name.
@@ -324,6 +374,7 @@ func (cw *ClusterWatcher) loadInitialClusters(ctx context.Context) {
 		cw.mutex.Lock()
 		for _, item := range list.Items {
 			clusterInfo := cw.parseCluster(&item)
+			cw.attachSveltosLocked(clusterInfo)
 			cw.clusters[clusterInfo.Name] = clusterInfo
 			cw.addSourceLocked(clusterInfo.Name, selector)
 		}
@@ -380,6 +431,7 @@ func (cw *ClusterWatcher) watchClusters(ctx context.Context, selector string) {
 					if prev, ok := cw.clusters[clusterInfo.Name]; ok {
 						clusterInfo.KubeconfigReady = prev.KubeconfigReady
 					}
+					cw.attachSveltosLocked(clusterInfo)
 					cw.clusters[clusterInfo.Name] = clusterInfo
 					cw.addSourceLocked(clusterInfo.Name, selector)
 				case watch.Deleted:
@@ -1017,6 +1069,7 @@ func (cw *ClusterWatcher) RefreshAndBroadcast(ctx context.Context) {
 			if r, ok := prevReady[clusterInfo.Name]; ok {
 				clusterInfo.KubeconfigReady = r
 			}
+			cw.attachSveltosLocked(clusterInfo)
 			cw.clusters[clusterInfo.Name] = clusterInfo
 			cw.addSourceLocked(clusterInfo.Name, selector)
 		}

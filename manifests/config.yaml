@@ -19,6 +19,12 @@ mcp:
   # In devmode, authentication is skipped. Set via CHIHIRO_MCP_API_KEY env var.
   api_key: ""
 
+# Sveltos integration (opt-in) — shows add-on deployment status from Sveltos
+# ClusterSummaries on each cluster card. Requires the Sveltos RBAC rule in
+# manifests/rbacs/rbacs.yaml. Set via CHIHIRO_SVELTOS_ENABLED env var.
+sveltos:
+  enabled: false
+
 cluster:
   domain: "clusters.example.com"
   port: 443

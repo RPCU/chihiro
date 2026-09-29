@@ -21,6 +21,7 @@ import (
 	"github.com/Bealvio/chihiro/internal/auth"
 	"github.com/Bealvio/chihiro/internal/cluster"
 	"github.com/Bealvio/chihiro/internal/server"
+	"github.com/Bealvio/chihiro/internal/sveltos"
 	"github.com/Bealvio/chihiro/internal/watcher"
 )
 
@@ -296,6 +297,19 @@ func runServer() {
 
 	srv := server.NewServer(clusterWatcher, clusterManager, authMiddleware, devmode, Version, Commit)
 	defer srv.Close()
+
+	// Opt-in Sveltos integration: surface add-on deployment status from
+	// Sveltos ClusterSummaries on each cluster card. Enabled before the
+	// cluster watcher starts so the initial cluster list already carries it.
+	sveltosEnabled := viper.GetBool("sveltos.enabled")
+	if env := os.Getenv("CHIHIRO_SVELTOS_ENABLED"); env != "" {
+		sveltosEnabled = parseBool(env)
+	}
+	slog.Info("Sveltos integration", "enabled", sveltosEnabled)
+	if sveltosEnabled {
+		clusterWatcher.EnableSveltos()
+		sveltos.NewWatcher(clusterWatcher.GetClient(), clusterWatcher.GetResolver(), clusterWatcher.SetSveltosStatus).Start(ctx)
+	}
 
 	clusterWatcher.Start(ctx)
 

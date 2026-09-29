@@ -34,6 +34,7 @@ Module path: `github.com/Bealvio/chihiro`.
 - CAPI GVR discovery/resolution: `internal/capi/`.
 - Cluster watch + WebSocket fan-out + per-user filtering: `internal/watcher/`.
 - Kubeconfig generation (OIDC exec plugin): `internal/kubeconfig/`.
+- Opt-in Sveltos add-on status (ClusterSummary watch): `internal/sveltos/`.
 - Config: `config.yaml` (all keys overridable via `CHIHIRO_*` env vars).
 - Frontend assets/templates: `web/` (`static/`, `templates/`).
 - Branding images (logo, favicon): `assets/`.
@@ -52,7 +53,7 @@ Run these before proposing changes are done:
 ```sh
 go build ./...        # must succeed
 go vet ./...          # must be clean
-go test ./...         # must pass (tests live in internal/cluster, internal/kubeconfig, internal/capi)
+go test ./...         # must pass (tests live in internal/cluster, internal/kubeconfig, internal/capi, internal/sveltos)
 gofmt -l .            # must print nothing (format before finishing)
 ```
 

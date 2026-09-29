@@ -55,6 +55,7 @@ function updateClusters(clusters) {
                     <h3 class="cluster-name">${nameHtml}</h3>
                     <div class="cluster-badges">
                         ${readOnlyBadge}
+                        ${renderSveltosBadge(cluster)}
                         <div class="cluster-status ${statusClass}">${escapeHtml(statusText)}</div>
                     </div>
                 </div>
@@ -104,6 +105,8 @@ function updateClusters(clusters) {
                 </div>
 
                 ${renderMoreDetails(cluster)}
+
+                ${renderSveltos(cluster)}
 
                 <div class="cluster-groups">
                     <div class="groups-label">
@@ -267,6 +270,97 @@ function renderMoreDetails(cluster) {
             ${rows}
         </div>
     `;
+}
+
+// Sveltos add-ons (opt-in integration). cluster.sveltos is only present when
+// the server has the integration enabled. Every value comes from Sveltos
+// ClusterSummaries and must be escaped.
+
+function sveltosStatusClass(status) {
+    switch (status) {
+        case 'Provisioned':
+            return 'ready';
+        case 'Failed':
+        case 'FailedNonRetriable':
+        case 'Conflict':
+            return 'not-ready';
+        case 'Paused':
+            return 'read-only';
+        default: // Provisioning, Removing, Blocked, ...
+            return 'pending';
+    }
+}
+
+function renderSveltosBadge(cluster) {
+    const sv = cluster.sveltos;
+    if (!sv || !sv.profiles || sv.profiles.length === 0) return '';
+    const title = `Sveltos add-ons: ${sv.profiles.length} profile(s) target this cluster`;
+    return `<div class="cluster-status ${sveltosStatusClass(sv.state)} sveltos-badge" title="${escapeHtml(title)}"><span class="material-symbols-outlined">extension</span>${escapeHtml(sv.state || 'Unknown')}</div>`;
+}
+
+function renderSveltos(cluster) {
+    const sv = cluster.sveltos;
+    if (!sv) return '';
+
+    const id = `sveltos-${clusterDomId(cluster.namespace, cluster.name)}`;
+    const isExpanded = expandedDetails.has(id);
+    const profiles = sv.profiles || [];
+
+    const body = profiles.length === 0
+        ? '<div class="sveltos-empty">No Sveltos profile targets this cluster.</div>'
+        : profiles.map(p => {
+            const profileRef = p.namespace ? `${p.namespace}/${p.name}` : p.name;
+            const notes = [];
+            if (p.paused) notes.push('<div class="sveltos-note">Reconciliation paused.</div>');
+            if (p.failureMessage) notes.push(`<div class="sveltos-note error">${escapeHtml(p.failureMessage)}</div>`);
+            const deployments = (p.deployments || []).map(d => {
+                const target = d.namespace ? `${d.namespace}/${d.name}` : d.name;
+                const applied = d.lastAppliedTime ? `Last applied ${new Date(d.lastAppliedTime).toLocaleString()}` : '';
+                return `
+                    <li class="sveltos-deployment" title="${escapeHtml(applied)}">
+                        <div class="sveltos-deployment-main">
+                            <span class="sveltos-kind">${escapeHtml(d.kind || d.featureID)}</span>
+                            <span class="sveltos-target">${escapeHtml(target)}</span>
+                            ${d.source ? `<span class="sveltos-source">${escapeHtml(d.source)}</span>` : ''}
+                            <span class="cluster-status ${sveltosStatusClass(d.status)}">${escapeHtml(d.status || 'Unknown')}</span>
+                        </div>
+                        ${d.message ? `<div class="sveltos-note error">${escapeHtml(d.message)}</div>` : ''}
+                    </li>`;
+            }).join('');
+            return `
+                <div class="sveltos-profile">
+                    <div class="sveltos-profile-header">
+                        <span class="sveltos-profile-name">${escapeHtml(p.kind || 'Profile')}/${escapeHtml(profileRef)}</span>
+                        <span class="cluster-status ${sveltosStatusClass(p.state)}">${escapeHtml(p.state || 'Unknown')}</span>
+                    </div>
+                    <div class="sveltos-summary-ref">ClusterSummary ${escapeHtml(cluster.namespace)}/${escapeHtml(p.clusterSummary)}</div>
+                    ${notes.join('')}
+                    ${deployments ? `<ul class="sveltos-deployments">${deployments}</ul>` : '<div class="sveltos-empty">Nothing to deploy.</div>'}
+                </div>`;
+        }).join('');
+
+    const label = `Add-ons (${profiles.length})`;
+    return `
+        <button class="more-details-toggle ${isExpanded ? 'expanded' : ''}" onclick="toggleSveltos('${id}', this)">
+            <span>${escapeHtml(label)}</span>
+            <span class="material-symbols-outlined">expand_more</span>
+        </button>
+        <div class="more-details sveltos-details ${isExpanded ? 'expanded' : ''}" id="${id}">
+            ${body}
+        </div>
+    `;
+}
+
+function toggleSveltos(id, btn) {
+    const panel = document.getElementById(id);
+    if (!panel) return;
+    const expanded = panel.classList.toggle('expanded');
+    btn.classList.toggle('expanded', expanded);
+    if (expanded) {
+        expandedDetails.add(id);
+    } else {
+        expandedDetails.delete(id);
+    }
 }
 
 function toggleMoreDetails(id, btn) {

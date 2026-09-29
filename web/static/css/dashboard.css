@@ -642,6 +642,83 @@
             color: var(--md-sys-color-on-surface-variant, #49454f);
         }
 
+        /* Sveltos add-ons */
+        .cluster-status.sveltos-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .cluster-status.sveltos-badge .material-symbols-outlined {
+            font-size: 0.95rem;
+        }
+        .sveltos-profile {
+            margin-bottom: 12px;
+            font-size: 0.85rem;
+        }
+        .sveltos-profile-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+        }
+        .sveltos-profile-name {
+            font-weight: 600;
+            color: var(--md-sys-color-on-surface);
+            word-break: break-all;
+        }
+        .sveltos-summary-ref {
+            font-size: 0.75rem;
+            color: var(--md-sys-color-on-surface-variant);
+            margin: 2px 0 6px;
+            word-break: break-all;
+        }
+        .sveltos-deployments {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        .sveltos-deployment {
+            padding: 6px 0;
+            border-top: 1px dashed var(--md-sys-color-outline-variant, rgba(0,0,0,0.1));
+        }
+        .sveltos-deployment-main {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+        }
+        .sveltos-deployment-main .cluster-status {
+            margin-left: auto;
+        }
+        .sveltos-kind {
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 1px 6px;
+            border-radius: 8px;
+            background: var(--md-sys-color-surface-variant, #e7e0ec);
+            color: var(--md-sys-color-on-surface-variant);
+        }
+        .sveltos-target {
+            font-weight: 600;
+            word-break: break-all;
+        }
+        .sveltos-source {
+            font-size: 0.75rem;
+            color: var(--md-sys-color-on-surface-variant);
+            word-break: break-all;
+        }
+        .sveltos-note,
+        .sveltos-empty {
+            font-size: 0.78rem;
+            color: var(--md-sys-color-on-surface-variant);
+            margin-top: 4px;
+        }
+        .sveltos-note.error {
+            color: var(--md-sys-color-error);
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             main.container {
