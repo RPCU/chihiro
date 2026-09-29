@@ -343,29 +343,6 @@
             font-weight: 600;
         }
 
-        .more-details-toggle {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            background: none;
-            border: none;
-            cursor: pointer;
-            color: var(--md-sys-color-primary);
-            font-family: 'Inter', sans-serif;
-            font-size: 0.8rem;
-            font-weight: 500;
-            padding: 4px 0;
-        }
-
-        .more-details-toggle .material-symbols-outlined {
-            font-size: 1.1rem;
-            transition: transform 0.2s ease;
-        }
-
-        .more-details-toggle.expanded .material-symbols-outlined {
-            transform: rotate(180deg);
-        }
-
         .more-details {
             display: none;
             margin-top: 8px;
@@ -413,6 +390,7 @@
 
         .cluster-actions {
             display: flex;
+            flex-wrap: wrap;
             gap: 12px;
             margin-top: 16px;
             padding-top: 16px;
@@ -656,22 +634,6 @@
         .cluster-status.sveltos-badge .material-symbols-outlined {
             font-size: 0.95rem;
         }
-        /* Long panels (add-ons, more details) scroll inside the card instead
-           of stretching it (and every card in its grid row). */
-        .panel-scroll {
-            max-height: 280px;
-            overflow-y: auto;
-            overscroll-behavior: contain;
-            padding-right: 6px;
-            scrollbar-width: thin;
-        }
-        .sveltos-profile-header {
-            position: sticky;
-            top: 0;
-            z-index: 1;
-            padding: 2px 0;
-            background: var(--md-sys-color-surface-container-highest);
-        }
         .sveltos-profile {
             margin-bottom: 12px;
             font-size: 0.85rem;
@@ -740,6 +702,16 @@
             word-break: break-word;
         }
 
+        .btn.btn-tonal {
+            white-space: nowrap;
+            background-color: rgba(63, 81, 181, 0.1);
+            color: var(--md-sys-color-primary);
+            text-decoration: none;
+        }
+        .btn.btn-tonal:hover {
+            background-color: rgba(63, 81, 181, 0.18);
+        }
+
         .empty-state a {
             color: var(--md-sys-color-primary);
         }
@@ -754,7 +726,7 @@
         }
         .cluster-link .material-symbols-outlined {
             font-size: 1rem;
-            opacity: 0;
+            opacity: 0.45;
             color: var(--md-sys-color-primary);
             transition: opacity 0.15s ease;
         }
@@ -776,8 +748,7 @@
         /* Dedicated cluster page (/clusters/<namespace>/<name>) */
         body.detail-view #statsContainer,
         body.detail-view #clustersSubtitle,
-        body.detail-view .create-action,
-        body.detail-view .more-details-toggle {
+        body.detail-view .create-action {
             display: none !important;
         }
         body.detail-view .detail-title {
@@ -812,7 +783,7 @@
         body.detail-view .sveltos-details::before {
             content: 'Add-ons (Sveltos)';
         }
-        body.detail-view .more-details:not(.sveltos-details) .panel-scroll {
+        body.detail-view .panel-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
             gap: 4px 16px;
@@ -820,11 +791,7 @@
         body.detail-view .more-details .detail-item.full-width {
             grid-column: 1 / -1;
         }
-        body.detail-view .panel-scroll {
-            max-height: none;
-            overflow: visible;
-        }
-        body.detail-view .sveltos-scroll {
+        body.detail-view .sveltos-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
             gap: 16px;
@@ -835,8 +802,10 @@
             border: 1px solid var(--md-sys-color-outline-variant);
             border-radius: 12px;
         }
-        body.detail-view .sveltos-profile-header {
-            position: static;
+        .sveltos-counts {
+            font-size: 0.8rem;
+            color: var(--md-sys-color-on-surface-variant);
+            margin: -6px 0 12px;
         }
 
         /* Responsive */
@@ -858,8 +827,8 @@
                 grid-template-columns: 1fr;
             }
 
-            body.detail-view .sveltos-scroll,
-            body.detail-view .more-details:not(.sveltos-details) .panel-scroll,
+            body.detail-view .sveltos-grid,
+            body.detail-view .panel-grid,
             body.detail-view .cluster-details {
                 grid-template-columns: 1fr;
             }
