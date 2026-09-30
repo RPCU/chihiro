@@ -9,152 +9,31 @@ function updateClusters(clusters) {
     if (DETAIL_VIEW) {
         // The list is already filtered to what this user may see, so a
         // missing cluster means it doesn't exist or isn't accessible.
-        clusters = currentClustersList.filter(c => c.name === DETAIL_VIEW.name && c.namespace === DETAIL_VIEW.namespace);
+        const cluster = currentClustersList.find(c => c.name === DETAIL_VIEW.name && c.namespace === DETAIL_VIEW.namespace);
+        if (!cluster) {
+            container.style.display = 'none';
+            emptyState.style.display = 'block';
+            return;
+        }
+        container.style.display = 'block';
+        emptyState.style.display = 'none';
+        renderPreservingDetails(container, renderClusterPage(cluster));
+        ensureClusterPageData();
+    } else {
+        updateFilterCounts(currentClustersList);
+        const shown = currentClustersList.filter(clusterMatchesFilter);
+        const noMatch = document.getElementById('noMatchState');
+        if (currentClustersList.length === 0) {
+            container.style.display = 'none';
+            emptyState.style.display = 'block';
+            if (noMatch) noMatch.style.display = 'none';
+            return;
+        }
+        emptyState.style.display = 'none';
+        if (noMatch) noMatch.style.display = shown.length === 0 ? 'block' : 'none';
+        container.style.display = shown.length === 0 ? 'none' : 'grid';
+        container.innerHTML = shown.map(renderClusterCard).join('');
     }
-
-    if (!clusters || clusters.length === 0) {
-        container.style.display = 'none';
-        emptyState.style.display = 'block';
-        return;
-    }
-
-    container.style.display = 'grid';
-    emptyState.style.display = 'none';
-
-    container.innerHTML = clusters.map(cluster => {
-        const age = getAge(cluster.createdAt);
-        const statusText = cluster.available ? 'Available' : (cluster.phase || 'Unknown');
-        const statusClass = cluster.available ? 'ready' : phaseStatusClass(cluster.phase);
-        const addons = DETAIL_VIEW ? clusterAddons(cluster) : null;
-
-        // All cluster fields below originate from Kubernetes resources
-        // (names, groups, creator, parameters) and must be treated as
-        // untrusted. Escape for HTML text context and, separately, for
-        // the single-quoted JS string literals used inside inline
-        // onclick handlers to prevent stored XSS.
-        const nameHtml = escapeHtml(cluster.name);
-        const nsHtml = escapeHtml(cluster.namespace);
-        const nameJs = escapeJs(cluster.name);
-        const nsJs = escapeJs(cluster.namespace);
-        const versionHtml = cluster.version ? escapeHtml(cluster.version) : 'N/A';
-        const versionJs = escapeJs(cluster.version || '');
-        const apiEndpointHtml = cluster.apiEndpoint ? escapeHtml(cluster.apiEndpoint) : 'N/A';
-        const groupsJoined = cluster.groups ? cluster.groups.join(',') : '';
-        const podCidrHtml = cluster.network && cluster.network.podCIDRs && cluster.network.podCIDRs.length > 0
-            ? escapeHtml(cluster.network.podCIDRs.join(', ')) : 'N/A';
-        const serviceCidrHtml = cluster.network && cluster.network.serviceCIDRs && cluster.network.serviceCIDRs.length > 0
-            ? escapeHtml(cluster.network.serviceCIDRs.join(', ')) : 'N/A';
-        const serviceDomainHtml = cluster.network && cluster.network.serviceDomain
-            ? escapeHtml(cluster.network.serviceDomain) : 'N/A';
-        // Element IDs embed namespace/name; sanitize to a safe charset so
-        // they can't break out of the attribute or collide with markup.
-        const idKey = `${cluster.namespace}-${cluster.name}`.replace(/[^A-Za-z0-9_.-]/g, '_');
-        // Clusters labelled chihiro.io/readonly=true are shown but never
-        // managed by chihiro. Flag them so the card visibly explains why no
-        // edit or delete controls are present.
-        const readOnlyBadge = cluster.readOnly
-            ? `<div class="cluster-status read-only" title="This cluster is not managed by chihiro. It is shown for visibility and its kubeconfig can be downloaded, but it cannot be edited or deleted here."><span class="material-symbols-outlined">lock</span>Read-only</div>`
-            : '';
-
-        return `
-            <div class="cluster-card${cluster.readOnly ? ' read-only' : ''}">
-                <div class="cluster-header">
-                    <h3 class="cluster-name">${DETAIL_VIEW ? nameHtml : `<a href="${escapeHtml(clusterPageUrl(cluster))}" class="cluster-link" title="Open cluster page">${nameHtml}<span class="material-symbols-outlined">open_in_new</span></a>`}</h3>
-                    <div class="cluster-badges">
-                        ${readOnlyBadge}
-                        <div class="cluster-status ${statusClass}">${escapeHtml(statusText)}</div>
-                    </div>
-                </div>
-
-                <div class="cluster-details">
-                    <div class="detail-item">
-                        <div class="detail-label">
-                            Version
-                            ${canEditField(cluster, 'version') ? `<button class="edit-btn" onclick="openEditVersionModal('${nameJs}', '${nsJs}', '${versionJs}')"><span class="material-symbols-outlined">edit</span></button>` : ''}
-                        </div>
-                        <div class="detail-value">${versionHtml}</div>
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">
-                            Worker Groups
-                            ${canEditField(cluster, 'workerGroups') ? `<button class="edit-btn" onclick="openEditWorkerGroupsModal('${nameJs}', '${nsJs}')"><span class="material-symbols-outlined">edit</span></button>` : ''}
-                        </div>
-                        <div class="detail-value">${formatWorkerGroups(cluster.workerGroups, cluster.nodes)}</div>
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">
-                            Control Plane
-                            ${canEditField(cluster, 'controlPlaneReplicas') ? `<button class="edit-btn" onclick="openEditControlPlaneModal('${nameJs}', '${nsJs}', ${Number(cluster.controlPlaneReplicas) || 0})"><span class="material-symbols-outlined">edit</span></button>` : ''}
-                        </div>
-                        <div class="detail-value">${Number(cluster.controlPlaneReplicas) || 0}</div>
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">Age</div>
-                        <div class="detail-value">${escapeHtml(age)}</div>
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">Pod CIDR</div>
-                        <div class="detail-value">${podCidrHtml}</div>
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">Service CIDR</div>
-                        <div class="detail-value">${serviceCidrHtml}</div>
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">Service Domain</div>
-                        <div class="detail-value">${serviceDomainHtml}</div>
-                    </div>
-                    <div class="detail-item full-width">
-                        <div class="detail-label">API Endpoint</div>
-                        <div class="detail-value" style="font-size: 0.75rem; word-break: break-all;">${apiEndpointHtml}</div>
-                    </div>
-                </div>
-
-                ${DETAIL_VIEW ? renderMoreDetails(cluster, addons) + renderAddons(cluster, addons) : renderAddonChips(cluster)}
-
-                <div class="cluster-groups">
-                    <div class="groups-label">
-                        Access Groups
-                        ${canEditField(cluster, 'groups') ? `<button class="edit-btn" onclick="openEditGroupsModal('${nameJs}', '${nsJs}', '${escapeJs(groupsJoined)}')"><span class="material-symbols-outlined">edit</span></button>` : ''}
-                    </div>
-                    <div class="group-chips">
-                        ${cluster.groups && cluster.groups.length > 0 ?
-                            cluster.groups.map(group => `<span class="group-chip">${escapeHtml(group)}</span>`).join('') :
-                            '<span style="color: var(--md-sys-color-on-surface-variant); font-size: 0.85rem;">No groups assigned</span>'
-                        }
-                    </div>
-                </div>
-
-                <div class="cluster-actions">
-                    ${DETAIL_VIEW ? '' : `
-                    <a class="btn btn-small btn-tonal" href="${escapeHtml(clusterPageUrl(cluster))}">
-                        <span class="material-symbols-outlined" style="margin-right: 4px;">open_in_full</span>
-                        More details
-                    </a>`}
-                    ${cluster.apiEndpoint && cluster.kubeconfigReady ? `
-                    <button class="btn btn-filled btn-small"
-                            id="kubeconfig-btn-${idKey}"
-                            onclick="downloadKubeconfig('${nameJs}', '${nsJs}')">
-                        <span class="material-symbols-outlined" style="margin-right: 4px;">download</span>
-                        Kubeconfig
-                    </button>` : `
-                    <button class="btn btn-small" disabled
-                            title="${!cluster.apiEndpoint ? 'Waiting for the control plane endpoint to become available.' : 'Waiting for the control plane OIDC configuration so a kubeconfig can be generated.'}"
-                            style="opacity: 0.5; cursor: not-allowed; background-color: var(--md-sys-color-surface); color: var(--md-sys-color-on-surface-variant); border: 1px solid var(--md-sys-color-outline); border-radius: 24px; padding: 0 16px; height: 36px; font-size: 0.85rem; font-family: 'Inter', sans-serif; font-weight: 500; display: inline-flex; align-items: center;">
-                        <span class="material-symbols-outlined" style="margin-right: 4px;">download</span>
-                        Kubeconfig
-                    </button>`}
-                    ${canDeleteCluster(cluster) ? `
-                        <button class="btn danger btn-small" onclick="openDeleteModal('${nameJs}', '${nsJs}')">
-                            <span class="material-symbols-outlined" style="margin-right: 4px;">delete</span>
-                            Delete
-                        </button>
-                    ` : ''}
-                </div>
-                <div class="kubeconfig-status" id="kubeconfig-status-${idKey}" style="display: none; margin-top: 8px; font-size: 0.8rem; align-items: center; gap: 6px;"></div>
-            </div>
-        `;
-    }).join('');
 
     // Re-apply any in-progress / error kubeconfig status messages that
     // were lost when the cluster cards were re-rendered (WebSocket
@@ -162,6 +41,288 @@ function updateClusters(clusters) {
     for (const [key, state] of Object.entries(kubeconfigStatus)) {
         renderKubeconfigStatus(key, state);
     }
+}
+
+// renderPreservingDetails replaces the container's markup but keeps the
+// open/closed state of <details> elements (by id), so live updates don't
+// collapse what the user expanded.
+function renderPreservingDetails(container, html) {
+    const open = new Set([...container.querySelectorAll('details[id]')].filter(d => d.open).map(d => d.id));
+    const closed = new Set([...container.querySelectorAll('details[id]')].filter(d => !d.open).map(d => d.id));
+    container.innerHTML = html;
+    container.querySelectorAll('details[id]').forEach(d => {
+        if (open.has(d.id)) d.open = true;
+        else if (closed.has(d.id)) d.open = false;
+    });
+}
+
+// All cluster fields originate from Kubernetes resources (names, groups,
+// creator, parameters, conditions) and must be treated as untrusted. Escape
+// for HTML text context and, separately, for the single-quoted JS string
+// literals used inside inline onclick handlers to prevent stored XSS.
+
+// Status badges shared by the dashboard card and the cluster page.
+function clusterBadges(cluster) {
+    const statusText = cluster.deleting ? 'Deleting' : (cluster.available ? 'Available' : (cluster.phase || 'Unknown'));
+    const statusClass = cluster.deleting ? 'not-ready' : (cluster.available ? 'ready' : phaseStatusClass(cluster.phase));
+    // Clusters labelled chihiro.io/readonly=true are shown but never
+    // managed by chihiro. Flag them so it's clear why no edit or delete
+    // controls are present.
+    const readOnly = cluster.readOnly
+        ? `<div class="cluster-status read-only" title="This cluster is not managed by chihiro. It is shown for visibility and its kubeconfig can be downloaded, but it cannot be edited or deleted here."><span class="material-symbols-outlined">lock</span>Read-only</div>`
+        : '';
+    const paused = cluster.paused
+        ? `<div class="cluster-status read-only" title="Reconciliation of this cluster is paused (spec.paused)."><span class="material-symbols-outlined">pause</span>Paused</div>`
+        : '';
+    return `${readOnly}${paused}<div class="cluster-status ${statusClass}">${escapeHtml(statusText)}</div>`;
+}
+
+function kubeconfigButton(cluster) {
+    const idKey = clusterDomId(cluster.namespace, cluster.name);
+    if (cluster.apiEndpoint && cluster.kubeconfigReady) {
+        return `
+            <button class="btn btn-filled btn-small" id="kubeconfig-btn-${idKey}"
+                    onclick="downloadKubeconfig('${escapeJs(cluster.name)}', '${escapeJs(cluster.namespace)}')">
+                <span class="material-symbols-outlined btn-icon">download</span>Kubeconfig
+            </button>`;
+    }
+    const why = !cluster.apiEndpoint
+        ? 'Waiting for the control plane endpoint to become available.'
+        : 'Waiting for the control plane OIDC configuration so a kubeconfig can be generated.';
+    return `
+        <button class="btn btn-small btn-disabled" disabled title="${why}">
+            <span class="material-symbols-outlined btn-icon">download</span>Kubeconfig
+        </button>`;
+}
+
+// deleteButton renders the delete action; compact is icon-only (cards).
+function deleteButton(cluster, compact) {
+    if (!canDeleteCluster(cluster)) return '';
+    const onclick = `openDeleteModal('${escapeJs(cluster.name)}', '${escapeJs(cluster.namespace)}')`;
+    if (compact) {
+        return `
+        <button class="btn danger btn-small btn-icon-only" onclick="${onclick}" title="Delete cluster" aria-label="Delete cluster">
+            <span class="material-symbols-outlined btn-icon">delete</span>
+        </button>`;
+    }
+    return `
+        <button class="btn danger btn-small" onclick="${onclick}">
+            <span class="material-symbols-outlined btn-icon">delete</span>Delete
+        </button>`;
+}
+
+function editButton(onclick, title) {
+    return `<button class="edit-btn" onclick="${onclick}" title="${escapeHtml(title || 'Edit')}"><span class="material-symbols-outlined">edit</span></button>`;
+}
+
+// Replicas. CAPI v1beta2 reports desired/ready counts in status.controlPlane
+// and status.workers; older clusters only have the spec counts.
+function replicaCounts(rs, specDesired) {
+    const desired = rs && (rs.desired ?? rs.current);
+    const ready = rs ? (rs.ready ?? rs.available) : undefined;
+    return {
+        desired: desired ?? (specDesired != null ? Number(specDesired) : null),
+        ready: ready ?? null,
+        upToDate: rs ? (rs.upToDate ?? null) : null,
+    };
+}
+
+function renderReplicaMeter(label, counts, editBtn) {
+    const desired = counts.desired ?? 0;
+    const known = counts.ready !== null;
+    const pct = known && desired > 0 ? Math.min(100, Math.round(counts.ready / desired * 100)) : (known ? 100 : 0);
+    const cls = !known ? 'unknown' : (counts.ready >= desired ? 'ready' : (counts.ready === 0 && desired > 0 ? 'not-ready' : 'pending'));
+    const countText = known ? `${counts.ready}/${desired} ready` : `${desired} desired`;
+    const tip = counts.upToDate !== null ? `${counts.upToDate}/${desired} up to date` : '';
+    return `
+        <div class="replica ${cls}" title="${escapeHtml(tip)}">
+            <div class="replica-head">
+                <span class="replica-label">${escapeHtml(label)}</span>
+                <span class="replica-count">${escapeHtml(countText)}</span>
+                ${editBtn || ''}
+            </div>
+            <div class="replica-bar"><span style="width: ${pct}%"></span></div>
+        </div>`;
+}
+
+// Conditions. Most CAPI conditions are healthy when True; these report an
+// ongoing operation when True and are healthy when False.
+const NEGATIVE_CONDITIONS = new Set(['Deleting', 'Paused', 'RollingOut', 'ScalingUp', 'ScalingDown', 'Remediating']);
+
+function conditionClass(c) {
+    if (NEGATIVE_CONDITIONS.has(c.type)) {
+        return c.status === 'True' ? 'pending' : 'ready';
+    }
+    if (c.status === 'True') return 'ready';
+    if (c.status === 'False' && c.severity !== 'Info' && c.severity !== 'Warning') return 'not-ready';
+    return 'pending';
+}
+
+// clusterIssues returns the conditions needing attention, worst first.
+function clusterIssues(cluster) {
+    return (cluster.conditions || [])
+        .map(c => Object.assign({ cls: conditionClass(c) }, c))
+        .filter(c => c.cls !== 'ready')
+        .sort((a, b) => ADDON_SEVERITY[a.cls] - ADDON_SEVERITY[b.cls] || a.type.localeCompare(b.type));
+}
+
+function humanizeCondition(type) {
+    return type.replace(/([a-z])([A-Z])/g, '$1 $2');
+}
+
+function conditionIcon(cls) {
+    return { 'ready': 'check_circle', 'not-ready': 'error', 'pending': 'pending' }[cls] || 'help';
+}
+
+// Dashboard filters: free-text search plus a status filter.
+let clusterFilter = { text: '', status: 'all' };
+
+function clusterHasIssues(cluster) {
+    if (clusterIssues(cluster).some(c => c.cls === 'not-ready')) return true;
+    const addons = clusterAddons(cluster);
+    return !!(addons && addons.items.some(a => addonStatusClass(a.state) === 'not-ready'));
+}
+
+const CLUSTER_FILTERS = {
+    all: () => true,
+    ready: c => c.ready,
+    pending: c => !c.ready && (c.phase || '').toLowerCase() !== 'provisioned',
+    issues: clusterHasIssues,
+};
+
+function clusterMatchesFilter(cluster) {
+    if (!(CLUSTER_FILTERS[clusterFilter.status] || CLUSTER_FILTERS.all)(cluster)) return false;
+    const q = clusterFilter.text.trim().toLowerCase();
+    if (!q) return true;
+    const haystack = [cluster.name, cluster.namespace, cluster.version, cluster.clusterClass, cluster.creator, ...(cluster.groups || [])]
+        .filter(Boolean).join(' ').toLowerCase();
+    return q.split(/\s+/).every(term => haystack.includes(term));
+}
+
+function setClusterFilter(patch) {
+    Object.assign(clusterFilter, patch);
+    document.querySelectorAll('.filter-chip').forEach(el => {
+        el.classList.toggle('active', el.dataset.filter === clusterFilter.status);
+    });
+    updateClusters(currentClustersList);
+}
+
+function updateFilterCounts(clusters) {
+    document.querySelectorAll('.filter-chip').forEach(el => {
+        const count = el.querySelector('.filter-count');
+        const fn = CLUSTER_FILTERS[el.dataset.filter];
+        if (count && fn) count.textContent = clusters.filter(fn).length;
+    });
+}
+
+// Dashboard card: an overview of one cluster. Everything else lives on the
+// cluster page.
+function renderClusterCard(cluster) {
+    const nameHtml = escapeHtml(cluster.name);
+    const nameJs = escapeJs(cluster.name);
+    const nsJs = escapeJs(cluster.namespace);
+    const pageUrl = escapeHtml(clusterPageUrl(cluster));
+    const idKey = clusterDomId(cluster.namespace, cluster.name);
+
+    const subtitle = [cluster.namespace, cluster.clusterClass, `${getAge(cluster.createdAt)} old`]
+        .filter(Boolean).map(escapeHtml).join(' · ');
+
+    const cp = renderReplicaMeter('Control plane',
+        replicaCounts(cluster.controlPlaneStatus, cluster.controlPlaneReplicas),
+        canEditField(cluster, 'controlPlaneReplicas')
+            ? editButton(`openEditControlPlaneModal('${nameJs}', '${nsJs}', ${Number(cluster.controlPlaneReplicas) || 0})`, 'Edit control plane replicas')
+            : '');
+    const workers = renderReplicaMeter('Workers',
+        replicaCounts(cluster.workersStatus, workerGroupsTotal(cluster)),
+        '');
+
+    const issues = clusterIssues(cluster);
+    const top = issues[0];
+    const issueLine = top ? `
+        <a class="issue-line ${top.cls}" href="${pageUrl}#section-health" title="${escapeHtml(issues.map(conditionSummary).join('\n'))}">
+            <span class="material-symbols-outlined">${conditionIcon(top.cls)}</span>
+            <span class="issue-text">${escapeHtml(conditionSummary(top))}</span>
+            ${issues.length > 1 ? `<span class="issue-more">+${issues.length - 1}</span>` : ''}
+        </a>` : '';
+
+    return `
+        <div class="cluster-card${cluster.readOnly ? ' read-only' : ''}">
+            <div class="cluster-header">
+                <div class="cluster-heading">
+                    <h3 class="cluster-name"><a href="${pageUrl}" class="cluster-link" title="Open cluster page">${nameHtml}<span class="material-symbols-outlined">open_in_new</span></a></h3>
+                    <div class="cluster-subtitle">${subtitle}</div>
+                </div>
+                <div class="cluster-badges">${clusterBadges(cluster)}</div>
+            </div>
+
+            ${issueLine}
+
+            <div class="replica-row">${cp}${workers}</div>
+
+            <div class="cluster-details">
+                <div class="detail-item">
+                    <div class="detail-label">
+                        Version
+                        ${canEditField(cluster, 'version') ? editButton(`openEditVersionModal('${nameJs}', '${nsJs}', '${escapeJs(cluster.version || '')}')`, 'Upgrade version') : ''}
+                    </div>
+                    <div class="detail-value">${cluster.version ? escapeHtml(cluster.version) : 'N/A'}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">
+                        Worker Groups
+                        ${canEditField(cluster, 'workerGroups') ? editButton(`openEditWorkerGroupsModal('${nameJs}', '${nsJs}')`, 'Edit worker groups') : ''}
+                    </div>
+                    <div class="detail-value">${formatWorkerGroups(cluster.workerGroups, replicaCounts(cluster.workersStatus, workerGroupsTotal(cluster)).desired)}</div>
+                </div>
+                <div class="detail-item full-width">
+                    <div class="detail-label">API Endpoint</div>
+                    <div class="detail-value mono">${cluster.apiEndpoint ? escapeHtml(cluster.apiEndpoint) : 'N/A'}</div>
+                </div>
+            </div>
+
+            ${renderAddonChips(cluster)}
+
+            <div class="cluster-groups">
+                <div class="groups-label">
+                    Access Groups
+                    ${canEditField(cluster, 'groups') ? editButton(`openEditGroupsModal('${nameJs}', '${nsJs}', '${escapeJs((cluster.groups || []).join(','))}')`, 'Edit access groups') : ''}
+                </div>
+                <div class="group-chips">${renderGroupChips(cluster)}</div>
+            </div>
+
+            <div class="cluster-actions">
+                <a class="btn btn-small btn-tonal" href="${pageUrl}">
+                    <span class="material-symbols-outlined btn-icon">open_in_full</span>More details
+                </a>
+                ${kubeconfigButton(cluster)}
+                ${deleteButton(cluster, true)}
+            </div>
+            <div class="kubeconfig-status" id="kubeconfig-status-${idKey}"></div>
+        </div>
+    `;
+}
+
+// conditionSummary is a one-line description of a condition. Aggregated
+// v1beta2 messages are "* Child: message" bullet lists; keep the first.
+function conditionSummary(c) {
+    const firstLine = (c.message || '').split('\n').map(l => l.replace(/^\s*\*\s*/, '').trim()).find(Boolean);
+    const detail = firstLine || c.reason;
+    return `${humanizeCondition(c.type)}${detail ? `: ${detail}` : ''}`;
+}
+
+function renderGroupChips(cluster) {
+    return cluster.groups && cluster.groups.length > 0
+        ? cluster.groups.map(group => `<span class="group-chip">${escapeHtml(group)}</span>`).join('')
+        : '<span class="muted">No groups assigned</span>';
+}
+
+// workerGroupsTotal is the desired worker count from the spec: the sum of the
+// chihiro worker groups, else what the watcher counted.
+function workerGroupsTotal(cluster) {
+    if (cluster.workerGroups && cluster.workerGroups.length > 0) {
+        return cluster.workerGroups.reduce((n, g) => n + (Number(g.replicas) || 0), 0);
+    }
+    return Number(cluster.nodes) || 0;
 }
 
 // setupDetailView switches the dashboard shell into a single-cluster page:
@@ -173,8 +334,7 @@ function setupDetailView() {
     document.title = `${DETAIL_VIEW.name} - Chihiro`;
     const title = document.getElementById('clustersTitle');
     if (title) {
-        title.innerHTML = `<a href="/" class="btn btn-text btn-small back-link"><span class="material-symbols-outlined">arrow_back</span>All clusters</a>
-            <span class="detail-title">${escapeHtml(DETAIL_VIEW.namespace)}/${escapeHtml(DETAIL_VIEW.name)}</span>`;
+        title.innerHTML = `<a href="/" class="btn btn-text btn-small back-link"><span class="material-symbols-outlined">arrow_back</span>All clusters</a>`;
     }
     const empty = document.getElementById('emptyState');
     if (empty) {
@@ -187,14 +347,25 @@ function setupDetailView() {
 // Update stats
 function updateStats(clusters) {
     const list = clusters || [];
-    const total = list.length;
-    const ready = list.filter(c => c.ready).length;
-    // Pending = anything that is neither ready nor in the Provisioned phase.
-    const pending = list.filter(c => !c.ready && (c.phase || '').toLowerCase() !== 'provisioned').length;
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    set('totalClusters', list.length);
+    set('readyClusters', list.filter(CLUSTER_FILTERS.ready).length);
+    set('pendingClusters', list.filter(CLUSTER_FILTERS.pending).length);
 
-    document.getElementById('totalClusters').textContent = total;
-    document.getElementById('readyClusters').textContent = ready;
-    document.getElementById('pendingClusters').textContent = pending;
+    // Worker nodes: ready/desired across clusters, where reported.
+    let ready = 0, desired = 0, readyKnown = false;
+    list.forEach(c => {
+        const counts = replicaCounts(c.workersStatus, workerGroupsTotal(c));
+        desired += counts.desired || 0;
+        if (counts.ready !== null) readyKnown = true;
+        ready += counts.ready ?? 0;
+    });
+    set('workerNodes', readyKnown ? `${ready}/${desired}` : desired);
+
+    const issues = list.filter(clusterHasIssues).length;
+    set('issueClusters', issues);
+    const issueCard = document.getElementById('issueStat');
+    if (issueCard) issueCard.classList.toggle('alert', issues > 0);
 }
 
 // Render the cluster page's "Parameters" section listing every parameter
@@ -242,7 +413,6 @@ function renderMoreDetails(cluster, addons) {
         .sort();
     if (keys.length === 0) return '';
 
-    const id = `more-${clusterDomId(cluster.namespace, cluster.name)}`;
     const nameJs = escapeJs(cluster.name);
     const nsJs = escapeJs(cluster.namespace);
     const boolKeys = [];
@@ -290,7 +460,7 @@ function renderMoreDetails(cluster, addons) {
     }).join('');
 
     return `
-        <section class="detail-section" id="${id}">
+        <section class="detail-section" id="section-parameters">
             <h4 class="section-title"><span class="material-symbols-outlined">tune</span>Parameters</h4>
             <div class="panel-grid">${otherRows}</div>
             ${boolRow}
@@ -307,7 +477,9 @@ function renderMoreDetails(cluster, addons) {
 // Add-on shape:
 //   { provider, kind, name, namespace, state, detail, paused, failureMessage,
 //     selectorLabels: [label keys it selects clusters on],
-//     deployments: [{ kind, target, source, status, message, lastAppliedTime }] }
+//     settings: [{ label, value }], notes: [string],
+//     stages: [{ name, status, lastAppliedTime, failures, kinds: [kind] }],
+//     deployments: [{ kind, target, source, link, update, action, status, message, lastAppliedTime }] }
 const ADDON_PROVIDERS = [sveltosAddons];
 
 // Sveltos: one add-on per ClusterProfile/Profile targeting the cluster.
@@ -324,10 +496,26 @@ function sveltosAddons(cluster) {
         paused: !!p.paused,
         failureMessage: p.failureMessage || '',
         selectorLabels: p.selectorLabels || [],
+        settings: [
+            p.syncMode ? { label: 'Sync', value: p.syncMode } : null,
+            p.tier ? { label: 'Tier', value: String(p.tier) } : null,
+            (p.dependsOn || []).length ? { label: 'Depends on', value: p.dependsOn.join(', ') } : null,
+        ].filter(Boolean),
+        notes: [p.suspensionReason, p.dependencies].filter(Boolean),
+        stages: (p.features || []).map(f => ({
+            name: f.featureID,
+            status: f.status || 'Provisioning',
+            lastAppliedTime: f.lastAppliedTime,
+            failures: f.consecutiveFailures || 0,
+            kinds: (f.deployedKinds || []).map(k => k.split('.')[0]),
+        })),
         deployments: (p.deployments || []).map(d => ({
             kind: d.kind || d.featureID,
             target: d.namespace ? `${d.namespace}/${d.name}` : d.name,
             source: d.source,
+            link: d.repoURL,
+            update: d.latestVersion,
+            action: d.uninstall ? 'Uninstall' : '',
             status: d.status,
             message: d.message,
             lastAppliedTime: d.lastAppliedTime,
@@ -487,27 +675,50 @@ function renderAddons(cluster, addons) {
         : addons.items.map(a => {
             const notes = [];
             if (a.paused) notes.push('<div class="addon-note">Reconciliation paused.</div>');
+            (a.notes || []).forEach(n => notes.push(`<div class="addon-note">${escapeHtml(n)}</div>`));
             if (a.failureMessage) notes.push(`<div class="addon-note error">${escapeHtml(a.failureMessage)}</div>`);
 
             const controls = a.params.map(p => {
                 const editBtn = canEditField(cluster, p.key)
-                    ? `<button class="edit-btn" onclick="openEditParameterModal('${nameJs}', '${nsJs}', '${escapeJs(p.key)}')" title="Edit"><span class="material-symbols-outlined">edit</span></button>`
+                    ? editButton(`openEditParameterModal('${nameJs}', '${nsJs}', '${escapeJs(p.key)}')`)
                     : '';
                 return `<span class="addon-param"><span class="material-symbols-outlined">tune</span>${escapeHtml(p.label || parameterLabel(p.key))}${editBtn}</span>`;
+            }).join('');
+
+            const settings = (a.settings || []).map(st =>
+                `<span class="addon-setting"><span class="addon-setting-label">${escapeHtml(st.label)}</span>${escapeHtml(st.value)}</span>`).join('');
+
+            const stages = (a.stages || []).map(st => {
+                const meta = [];
+                if (st.lastAppliedTime) meta.push(`applied ${getAge(st.lastAppliedTime)} ago`);
+                if (st.failures) meta.push(`${st.failures} failed attempt${st.failures === 1 ? '' : 's'}`);
+                const kinds = [...new Set(st.kinds || [])];
+                const title = [
+                    st.lastAppliedTime ? `Last applied ${new Date(st.lastAppliedTime).toLocaleString()}` : '',
+                    kinds.length ? `Deployed kinds: ${kinds.join(', ')}` : '',
+                ].filter(Boolean).join('\n');
+                return `<span class="addon-stage ${addonStatusClass(st.status)}" title="${escapeHtml(title)}">
+                        <span class="addon-dot"></span><strong>${escapeHtml(st.name)}</strong>
+                        <span>${escapeHtml(st.status)}</span>
+                        ${meta.length ? `<span class="addon-stage-meta">· ${escapeHtml(meta.join(' · '))}</span>` : ''}
+                    </span>`;
             }).join('');
 
             const deployments = a.deployments.slice()
                 .sort((x, y) => bySeverity(x.status, y.status))
                 .map(d => {
                     const applied = d.lastAppliedTime ? `Last applied ${new Date(d.lastAppliedTime).toLocaleString()}` : '';
+                    const source = [d.link, d.source].filter(Boolean).join(' · ');
                     return `
                     <li class="addon-deployment" title="${escapeHtml(applied)}">
                         <div class="addon-deployment-main">
                             <span class="addon-kind">${escapeHtml(d.kind || '')}</span>
                             <span class="addon-target">${escapeHtml(d.target || '')}</span>
+                            ${d.action ? `<span class="addon-kind">${escapeHtml(d.action)}</span>` : ''}
+                            ${d.update ? `<span class="addon-update" title="A newer chart version is available in the repository"><span class="material-symbols-outlined">upgrade</span>${escapeHtml(d.update)}</span>` : ''}
                             <span class="cluster-status ${addonStatusClass(d.status)}">${escapeHtml(d.status || 'Unknown')}</span>
                         </div>
-                        ${d.source ? `<div class="addon-source">${escapeHtml(d.source)}</div>` : ''}
+                        ${source ? `<div class="addon-source">${escapeHtml(source)}</div>` : ''}
                         ${d.message ? `<div class="addon-note error">${escapeHtml(d.message)}</div>` : ''}
                     </li>`;
                 }).join('');
@@ -523,10 +734,13 @@ function renderAddons(cluster, addons) {
                         <span class="cluster-status ${addonStatusClass(a.state)}">${escapeHtml(a.state || 'Unknown')}</span>
                     </div>
                     ${controls ? `<div class="addon-params"><span class="addon-meta-label">Controlled by</span>${controls}</div>` : ''}
+                    ${settings ? `<div class="addon-settings">${settings}</div>` : ''}
+                    ${stages ? `<div class="addon-stages">${stages}</div>` : ''}
                     ${a.detail ? `<div class="addon-meta">${escapeHtml(a.detail)}</div>` : ''}
                     ${a.selectorLabels.length ? `<div class="addon-meta">Selects clusters on ${escapeHtml(a.selectorLabels.join(', '))}</div>` : ''}
                     ${notes.join('')}
                     ${deployments ? `<ul class="addon-deployments">${deployments}</ul>` : '<div class="addon-note">Nothing to deploy.</div>'}
+                    ${renderDeployedResources(cluster, a)}
                 </div>`;
         }).join('');
 
@@ -535,7 +749,7 @@ function renderAddons(cluster, addons) {
         ? `${addonCounts(addons.items)} · ${deploymentCount} deployment${deploymentCount === 1 ? '' : 's'}`
         : '';
     return `
-        <section class="detail-section">
+        <section class="detail-section" id="section-addons">
             <h4 class="section-title">
                 <span class="material-symbols-outlined">extension</span>Add-ons
                 ${addons.providers.map(p => `<span class="provider-tag">${escapeHtml(p)}</span>`).join('')}

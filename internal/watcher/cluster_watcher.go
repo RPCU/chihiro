@@ -122,6 +122,17 @@ type ClusterInfo struct {
 	// opt-in Sveltos integration is disabled, and has no profiles when the
 	// integration is enabled but no profile matches the cluster.
 	Sveltos *sveltos.ClusterStatus `json:"sveltos,omitempty"`
+
+	// Structured status for the cluster page, see parseClusterDetails.
+	Conditions         []Condition    `json:"conditions,omitempty"`
+	ControlPlaneStatus *ReplicaStatus `json:"controlPlaneStatus,omitempty"`
+	WorkersStatus      *ReplicaStatus `json:"workersStatus,omitempty"`
+	FailureDomains     []string       `json:"failureDomains,omitempty"`
+	ClusterClass       string         `json:"clusterClass,omitempty"`
+	InfrastructureRef  *ObjectRef     `json:"infrastructureRef,omitempty"`
+	ControlPlaneRef    *ObjectRef     `json:"controlPlaneRef,omitempty"`
+	Paused             bool           `json:"paused,omitempty"`
+	Deleting           bool           `json:"deleting,omitempty"`
 }
 
 // clusterSelectors are the label selectors the watcher lists and watches. A
@@ -479,7 +490,9 @@ func (cw *ClusterWatcher) parseCluster(obj *unstructured.Unstructured) *ClusterI
 		// surfaced it, so a chihiro-managed cluster that was later frozen with
 		// the read-only label is recognised on the managed watch too.
 		ReadOnly: cluster.IsReadOnlyLabelValue(obj.GetLabels()[cluster.ReadOnlyLabel]),
+		Deleting: obj.GetDeletionTimestamp() != nil,
 	}
+	parseClusterDetails(clusterInfo, spec, status)
 
 	slog.Debug("Parsing cluster", "name", obj.GetName(), "namespace", obj.GetNamespace())
 

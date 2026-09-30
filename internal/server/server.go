@@ -147,6 +147,7 @@ func (s *Server) setupRoutes() {
 	protected.PUT("/api/clusters/:name/version", s.handleEditClusterVersion)
 	protected.PUT("/api/clusters/:name/parameter", s.handleEditClusterParameter)
 	protected.GET("/api/clusters/:name/kubeconfig", s.handleDownloadKubeconfig)
+	protected.GET("/api/clusters/:name/details", s.handleClusterDetails)
 	protected.GET("/api/versions", s.handleGetVersions)
 	protected.GET("/api/user/groups", s.handleGetUserGroups)
 	protected.GET("/api/user/permissions", s.handleGetUserPermissions)

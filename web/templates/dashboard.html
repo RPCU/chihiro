@@ -35,17 +35,25 @@
     <main class="container">
         <!-- Stats Section -->
         <div class="stats-grid" id="statsContainer">
-            <div class="stat-card">
-                <h3 id="totalClusters">0</h3>
-                <p>Total Clusters</p>
-            </div>
-            <div class="stat-card">
-                <h3 id="readyClusters">0</h3>
-                <p>Ready Clusters</p>
-            </div>
-            <div class="stat-card">
-                <h3 id="pendingClusters">0</h3>
-                <p>Pending Clusters</p>
+            <button type="button" class="stat-card" onclick="setClusterFilter({ status: 'all' })">
+                <span class="material-symbols-outlined stat-icon">developer_board</span>
+                <div><h3 id="totalClusters">0</h3><p>Clusters</p></div>
+            </button>
+            <button type="button" class="stat-card ready" onclick="setClusterFilter({ status: 'ready' })">
+                <span class="material-symbols-outlined stat-icon">check_circle</span>
+                <div><h3 id="readyClusters">0</h3><p>Ready</p></div>
+            </button>
+            <button type="button" class="stat-card pending" onclick="setClusterFilter({ status: 'pending' })">
+                <span class="material-symbols-outlined stat-icon">pending</span>
+                <div><h3 id="pendingClusters">0</h3><p>Pending</p></div>
+            </button>
+            <button type="button" class="stat-card not-ready" id="issueStat" onclick="setClusterFilter({ status: 'issues' })">
+                <span class="material-symbols-outlined stat-icon">error</span>
+                <div><h3 id="issueClusters">0</h3><p>With issues</p></div>
+            </button>
+            <div class="stat-card" title="Ready / desired worker nodes across all clusters">
+                <span class="material-symbols-outlined stat-icon">memory</span>
+                <div><h3 id="workerNodes">0</h3><p>Worker nodes</p></div>
             </div>
         </div>
 
@@ -67,6 +75,20 @@
                 Manage your Kubernetes clusters with real-time monitoring
             </div>
 
+            <div class="cluster-toolbar" id="clusterToolbar">
+                <label class="search-box">
+                    <span class="material-symbols-outlined">search</span>
+                    <input type="search" id="clusterSearch" placeholder="Search name, namespace, group, version…" autocomplete="off"
+                           oninput="setClusterFilter({ text: this.value })">
+                </label>
+                <div class="filter-chips" role="group" aria-label="Filter clusters">
+                    <button type="button" class="filter-chip active" data-filter="all" onclick="setClusterFilter({ status: 'all' })">All <span class="filter-count">0</span></button>
+                    <button type="button" class="filter-chip" data-filter="ready" onclick="setClusterFilter({ status: 'ready' })">Ready <span class="filter-count">0</span></button>
+                    <button type="button" class="filter-chip" data-filter="pending" onclick="setClusterFilter({ status: 'pending' })">Pending <span class="filter-count">0</span></button>
+                    <button type="button" class="filter-chip" data-filter="issues" onclick="setClusterFilter({ status: 'issues' })">Issues <span class="filter-count">0</span></button>
+                </div>
+            </div>
+
             <div class="cluster-grid" id="clustersContainer">
                 <!-- Clusters will be populated here -->
             </div>
@@ -75,6 +97,12 @@
                 <span class="material-symbols-outlined">developer_board</span>
                 <h3>No clusters found</h3>
                 <p>Create your first cluster to get started</p>
+            </div>
+
+            <div class="empty-state" id="noMatchState" style="display: none;">
+                <span class="material-symbols-outlined">filter_alt_off</span>
+                <h3>No cluster matches</h3>
+                <p><a href="#" onclick="document.getElementById('clusterSearch').value = ''; setClusterFilter({ text: '', status: 'all' }); return false;">Clear filters</a></p>
             </div>
         </div>
     </main>
@@ -282,6 +310,7 @@
     <script src="/static/js/api.js"></script>
     <script src="/static/js/websocket.js"></script>
     <script src="/static/js/clusters.js"></script>
+    <script src="/static/js/cluster-page.js"></script>
     <script src="/static/js/worker-groups.js"></script>
     <script src="/static/js/parameters.js"></script>
     <script src="/static/js/modals.js"></script>
