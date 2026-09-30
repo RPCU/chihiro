@@ -92,46 +92,21 @@ function loadVersions() {
         .catch(error => console.error('Error loading versions:', error));
 }
 
+// loadLimitsInfo fetches the configured quotas for the create form's live
+// quota check (see renderCreateQuota).
 function loadLimitsInfo() {
     fetch('/api/limits', {
         credentials: 'include'
     })
         .then(response => response.json())
         .then(data => {
-            const limitsEl = document.getElementById('limitsInfo');
-            const cpInput = document.getElementById('clusterControlPlaneReplicas');
-
-            if (data.maxClusters > 0 || data.maxTotalNodes > 0 || data.maxTotalCP > 0) {
-                let limitsText = [];
-
-                if (data.maxClusters > 0) {
-                    limitsText.push(`Clusters: ${data.currentClusters}/${data.maxClusters}`);
-                }
-
-                if (data.maxTotalNodes > 0) {
-                    limitsText.push(`Total nodes: ${data.currentTotalNodes}/${data.maxTotalNodes}`);
-                    limitsText.push(`Available: ${data.availableNodes}`);
-                }
-
-                if (data.maxTotalCP > 0) {
-                    limitsText.push(`Control plane: ${data.currentTotalCP}/${data.maxTotalCP}`);
-                    if (cpInput) cpInput.max = data.availableCP;
-                }
-
-                limitsEl.textContent = limitsText.join(' | ');
-
-                // Check if at cluster limit
-                if (data.maxClusters > 0 && data.currentClusters >= data.maxClusters) {
-                    limitsEl.style.color = 'var(--md-sys-color-error)';
-                    limitsEl.textContent = `Cluster limit reached (${data.currentClusters}/${data.maxClusters}). Cannot create more clusters.`;
-                }
-            } else {
-                limitsEl.textContent = 'No limits configured';
-            }
+            createLimits = data || null;
+            updateCreateSummary();
         })
         .catch(error => {
             console.error('Error loading limits:', error);
-            document.getElementById('limitsInfo').textContent = 'Failed to load limits';
+            createLimits = null;
+            updateCreateSummary();
         });
 }
 
@@ -153,6 +128,7 @@ function loadUserGroups() {
                     select.appendChild(option);
                 });
             });
+            renderGroupChoiceChips();
         })
         .catch(error => console.error('Error loading user groups:', error));
 }

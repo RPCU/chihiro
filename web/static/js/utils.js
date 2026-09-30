@@ -153,3 +153,16 @@ function phaseStatusClass(phase) {
             return 'pending';
     }
 }
+
+// showToast shows a short-lived notification. kind: 'success' | 'error' | ''.
+function showToast(message, kind) {
+    const region = document.getElementById('toastRegion');
+    if (!region) return;
+    const icon = { success: 'check_circle', error: 'error' }[kind] || 'info';
+    const toast = document.createElement('div');
+    toast.className = `toast ${kind || ''}`;
+    toast.innerHTML = `<span class="material-symbols-outlined">${icon}</span><span>${escapeHtml(message)}</span>`;
+    region.appendChild(toast);
+    setTimeout(() => toast.classList.add('leaving'), 5000);
+    setTimeout(() => toast.remove(), 5400);
+}

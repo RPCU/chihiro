@@ -108,55 +108,94 @@
     </main>
 
     <footer id="appFooter" class="app-footer"></footer>
+    <div class="toast-region" id="toastRegion" aria-live="polite"></div>
 
     <!-- Create Cluster Modal -->
     <div class="modal-overlay" id="createModalOverlay">
-        <div class="modal modal-wide">
-            <h3>Create New Cluster</h3>
-            <form id="createClusterForm">
-                <div class="form-group">
-                    <label for="clusterName">Cluster Name</label>
-                    <input type="text" id="clusterName" required>
-                </div>
-                <div class="form-group">
-                    <label for="clusterVersion">Kubernetes Version</label>
-                    <select id="clusterVersion" required>
-                        <option value="">Select version...</option>
-                    </select>
-                </div>
-                <div id="dynamicParamsContainer"></div>
-                <div class="form-group">
-                    <label>Worker Groups</label>
-                    <div id="createWorkerGroups"></div>
-                    <button type="button" class="btn btn-text btn-small" onclick="addCreateWorkerGroup()" style="margin-top: 8px;">
-                        <span class="material-symbols-outlined" style="font-size: 1.1rem; margin-right: 4px;">add</span>
-                        Add Group
-                    </button>
-                </div>
-                <div class="form-group">
-                    <label for="clusterControlPlaneReplicas">Control Plane Replicas</label>
-                    <input type="number" id="clusterControlPlaneReplicas" min="1" value="3" required>
-                </div>
-                <small id="limitsInfo" style="color: var(--md-sys-color-on-surface-variant); font-size: 0.8rem; display: block; margin-bottom: 12px;">
-                    Loading limits...
-                </small>
-                <div class="form-group" id="groupsSection">
-                    <label for="clusterGroups">Access Groups</label>
-                    <select id="clusterGroups" multiple>
-                        <!-- Options will be populated -->
-                    </select>
-                </div>
-                <div class="form-group" id="groupsTextSection" style="display: none;">
-                    <label for="clusterGroupsText">Access Groups (comma-separated)</label>
-                    <input type="text" id="clusterGroupsText" placeholder="dev-team,platform-admin">
-                </div>
+        <div class="modal modal-wide modal-create" role="dialog" aria-modal="true" aria-labelledby="createModalTitle">
+            <div class="modal-head">
+                <h3 id="createModalTitle">Create cluster</h3>
+                <button type="button" class="icon-btn" onclick="requestCloseCreateModal()" title="Close (Esc)" aria-label="Close">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <form id="createClusterForm" novalidate>
+                <div class="form-banner error" id="createFormError" role="alert" hidden></div>
+
+                <section class="form-section">
+                    <h4 class="form-section-title"><span class="step">1</span>Basics</h4>
+                    <div class="form-grid">
+                        <div class="form-group" data-field="name">
+                            <label for="clusterName">Cluster name</label>
+                            <input type="text" id="clusterName" required autocomplete="off" spellcheck="false"
+                                   placeholder="e.g. team-a-dev" oninput="onCreateFieldInput('name')">
+                            <small class="field-hint">Lowercase letters, digits and hyphens; starts and ends with a letter or digit.</small>
+                            <small class="field-error" id="clusterNameError"></small>
+                        </div>
+                        <div class="form-group" data-field="version">
+                            <label for="clusterVersion">Kubernetes version</label>
+                            <select id="clusterVersion" required onchange="onCreateFieldInput('version')">
+                                <option value="">Select version...</option>
+                            </select>
+                            <small class="field-error" id="clusterVersionError"></small>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="form-section">
+                    <h4 class="form-section-title"><span class="step">2</span>Size</h4>
+                    <div class="form-group" data-field="controlPlane">
+                        <label for="clusterControlPlaneReplicas">Control plane replicas</label>
+                        <div class="stepper">
+                            <button type="button" class="stepper-btn" onclick="stepControlPlane(-1)" aria-label="Fewer control plane replicas"><span class="material-symbols-outlined">remove</span></button>
+                            <input type="number" id="clusterControlPlaneReplicas" min="1" value="3" required oninput="onCreateFieldInput('controlPlane')">
+                            <button type="button" class="stepper-btn" onclick="stepControlPlane(1)" aria-label="More control plane replicas"><span class="material-symbols-outlined">add</span></button>
+                        </div>
+                        <small class="field-hint">Use an odd number (1, 3, 5) so etcd keeps quorum.</small>
+                        <small class="field-error" id="clusterControlPlaneReplicasError"></small>
+                    </div>
+                    <div class="form-group" data-field="workers">
+                        <label>Worker groups <span class="label-aside" id="workerTotal"></span></label>
+                        <div id="createWorkerGroups" oninput="onCreateFieldInput('workers')" onchange="onCreateFieldInput('workers')"></div>
+                        <button type="button" class="btn btn-text btn-small" onclick="addCreateWorkerGroup(defaultWorkerGroupValues()); onCreateFieldInput('workers')">
+                            <span class="material-symbols-outlined btn-icon">add</span>Add group
+                        </button>
+                        <small class="field-error" id="createWorkerGroupsError"></small>
+                    </div>
+                    <div class="quota" id="createQuota" hidden></div>
+                </section>
+
+                <section class="form-section" id="createOptionsSection">
+                    <h4 class="form-section-title"><span class="step">3</span>Options</h4>
+                    <div id="dynamicParamsContainer" onchange="updateCreateSummary()"></div>
+                </section>
+
+                <section class="form-section">
+                    <h4 class="form-section-title"><span class="step" id="accessStep">4</span>Access</h4>
+                    <div class="form-group" id="groupsSection" data-field="groups">
+                        <label>Access groups</label>
+                        <small class="field-hint">Members of the selected groups can see and manage the cluster.</small>
+                        <div class="choice-chips" id="clusterGroupChips" role="group" aria-label="Access groups"></div>
+                        <!-- Data source for the chips (also filled by loadUserGroups). -->
+                        <select id="clusterGroups" multiple hidden></select>
+                        <small class="field-error" id="clusterGroupsError"></small>
+                    </div>
+                    <div class="form-group" id="groupsTextSection" style="display: none;" data-field="groups">
+                        <label for="clusterGroupsText">Access groups</label>
+                        <input type="text" id="clusterGroupsText" placeholder="dev-team, platform-admin" oninput="onCreateFieldInput('groups')">
+                        <small class="field-hint">Comma-separated. As an admin you can assign any group.</small>
+                        <div class="choice-chips preview" id="clusterGroupsTextPreview"></div>
+                        <small class="field-error" id="clusterGroupsTextError"></small>
+                    </div>
+                </section>
+
                 <div class="form-actions">
-                    <button type="button" class="btn btn-text" onclick="closeCreateModal()">Cancel</button>
+                    <div class="form-summary" id="createSummary" aria-live="polite"></div>
+                    <button type="button" class="btn btn-text" onclick="requestCloseCreateModal()">Cancel</button>
                     <button type="button" class="btn btn-tonal" onclick="previewClusterYaml(this)">
-                        <span class="material-symbols-outlined" style="font-size: 1.1rem; margin-right: 4px;">visibility</span>
-                        Preview YAML
+                        <span class="material-symbols-outlined btn-icon">visibility</span>Preview YAML
                     </button>
-                    <button type="submit" class="btn btn-filled">Create Cluster</button>
+                    <button type="submit" class="btn btn-filled">Create cluster</button>
                 </div>
             </form>
         </div>
@@ -315,5 +354,6 @@
     <script src="/static/js/parameters.js"></script>
     <script src="/static/js/modals.js"></script>
     <script src="/static/js/forms.js"></script>
+    <script src="/static/js/create-form.js"></script>
 </body>
 </html>

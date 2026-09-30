@@ -22,6 +22,7 @@ let editControlPlaneData = null;
 let editVersionData = null;
 let availableVersions = [];
 let editParameterData = null;
+let createLimits = null; // /api/limits response, for the create form quota check
 
 // Parameters already surfaced elsewhere on the card (main details grid
 // and groups section), excluded from "More details" to avoid duplicates.
