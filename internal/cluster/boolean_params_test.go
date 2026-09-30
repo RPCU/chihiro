@@ -127,3 +127,24 @@ func TestGetEditableFieldsBooleanParam(t *testing.T) {
 		t.Errorf("editable field path missing")
 	}
 }
+
+func TestDiscoverParametersAddons(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	viper.Set("cluster.parameters", map[string]interface{}{
+		"monitoring": map[string]interface{}{
+			"type":   "boolean",
+			"addons": []interface{}{"ClusterProfile/prometheus", "grafana"},
+		},
+	})
+
+	params := DiscoverParameters("x: {{ chihiro.monitoring }}")
+	if len(params) != 1 {
+		t.Fatalf("expected 1 parameter, got %d", len(params))
+	}
+	want := []string{"ClusterProfile/prometheus", "grafana"}
+	if !reflect.DeepEqual(params[0].Addons, want) {
+		t.Errorf("Addons = %#v, want %#v", params[0].Addons, want)
+	}
+}

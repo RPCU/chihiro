@@ -25,6 +25,7 @@ function updateClusters(clusters) {
         const age = getAge(cluster.createdAt);
         const statusText = cluster.available ? 'Available' : (cluster.phase || 'Unknown');
         const statusClass = cluster.available ? 'ready' : phaseStatusClass(cluster.phase);
+        const addons = DETAIL_VIEW ? clusterAddons(cluster) : null;
 
         // All cluster fields below originate from Kubernetes resources
         // (names, groups, creator, parameters) and must be treated as
@@ -61,7 +62,6 @@ function updateClusters(clusters) {
                     <h3 class="cluster-name">${DETAIL_VIEW ? nameHtml : `<a href="${escapeHtml(clusterPageUrl(cluster))}" class="cluster-link" title="Open cluster page">${nameHtml}<span class="material-symbols-outlined">open_in_new</span></a>`}</h3>
                     <div class="cluster-badges">
                         ${readOnlyBadge}
-                        ${renderSveltosBadge(cluster)}
                         <div class="cluster-status ${statusClass}">${escapeHtml(statusText)}</div>
                     </div>
                 </div>
@@ -110,7 +110,7 @@ function updateClusters(clusters) {
                     </div>
                 </div>
 
-                ${DETAIL_VIEW ? renderMoreDetails(cluster) + renderSveltos(cluster) : ''}
+                ${DETAIL_VIEW ? renderMoreDetails(cluster, addons) + renderAddons(cluster, addons) : renderAddonChips(cluster)}
 
                 <div class="cluster-groups">
                     <div class="groups-label">
@@ -197,9 +197,10 @@ function updateStats(clusters) {
     document.getElementById('pendingClusters').textContent = pending;
 }
 
-// Render the collapsible "More details" section listing every parameter
-// that was set for the cluster at creation time.
-function renderMoreDetails(cluster) {
+// Render the cluster page's "Parameters" section listing every parameter
+// that was set for the cluster at creation time. Parameters controlling an
+// add-on show its state and link to it.
+function renderMoreDetails(cluster, addons) {
     const params = Object.assign({}, cluster.parameters || {});
     // Merge boolean parameters whose values live in cluster labels
     // (not in the chihiro.io/parameters annotation) so they show in
@@ -266,11 +267,11 @@ function renderMoreDetails(cluster) {
         const editBtn = editable
             ? `<button class="edit-btn" onclick="openEditParameterModal('${nameJs}', '${nsJs}', '${escapeJs(key)}')"><span class="material-symbols-outlined">edit</span></button>`
             : '';
-        return `<span class="bool-chip-item">${editBtn}<span class="param-bool ${on ? 'on' : 'off'}">${on ? 'On' : 'Off'}</span><span class="bool-chip-label">${escapeHtml(parameterLabel(key))}</span></span>`;
+        return `<span class="bool-chip-item"><span class="param-bool ${on ? 'on' : 'off'}">${on ? 'On' : 'Off'}</span><span class="bool-chip-label">${escapeHtml(parameterLabel(key))}</span>${editBtn}${addonStatusLink(cluster, addons, key)}</span>`;
     }).join('');
 
     const boolRow = boolKeys.length > 0
-        ? `<div class="detail-item full-width"><div class="detail-label" style="margin-bottom: 8px;">Options</div><div class="bool-chips-row">${boolChips}</div></div>`
+        ? `<div class="detail-item full-width"><div class="detail-label" style="margin-bottom: 8px;">Options</div><div class="bool-chips-grid">${boolChips}</div></div>`
         : '';
 
     const otherRows = otherKeys.map(key => {
@@ -283,24 +284,114 @@ function renderMoreDetails(cluster) {
         <div class="detail-item">
             <div class="detail-label">${escapeHtml(parameterLabel(key))}${editBtn}</div>
             <div class="detail-value">${valueHtml}</div>
+            ${addonStatusLink(cluster, addons, key)}
         </div>
     `;
     }).join('');
 
-    const rows = boolRow + otherRows;
-
     return `
-        <div class="more-details expanded" id="${id}">
-            <div class="panel-grid">${rows}</div>
-        </div>
+        <section class="detail-section" id="${id}">
+            <h4 class="section-title"><span class="material-symbols-outlined">tune</span>Parameters</h4>
+            <div class="panel-grid">${otherRows}</div>
+            ${boolRow}
+        </section>
     `;
 }
 
-// Sveltos add-ons (opt-in integration). cluster.sveltos is only present when
-// the server has the integration enabled. Every value comes from Sveltos
-// ClusterSummaries and must be escaped.
+// Add-ons. Each provider adapter below turns its integration's data on the
+// cluster object into a provider-agnostic list of add-ons, which the rest of
+// the UI renders and links to parameters without knowing the provider. An
+// adapter returns null when its integration is disabled. Every value comes
+// from Kubernetes objects and must be escaped.
+//
+// Add-on shape:
+//   { provider, kind, name, namespace, state, detail, paused, failureMessage,
+//     selectorLabels: [label keys it selects clusters on],
+//     deployments: [{ kind, target, source, status, message, lastAppliedTime }] }
+const ADDON_PROVIDERS = [sveltosAddons];
 
-function sveltosStatusClass(status) {
+// Sveltos: one add-on per ClusterProfile/Profile targeting the cluster.
+function sveltosAddons(cluster) {
+    const sv = cluster.sveltos;
+    if (!sv) return null;
+    return (sv.profiles || []).map(p => ({
+        provider: 'Sveltos',
+        kind: p.kind || 'Profile',
+        name: p.name,
+        namespace: p.namespace || '',
+        state: p.state,
+        detail: `ClusterSummary ${cluster.namespace}/${p.clusterSummary}`,
+        paused: !!p.paused,
+        failureMessage: p.failureMessage || '',
+        selectorLabels: p.selectorLabels || [],
+        deployments: (p.deployments || []).map(d => ({
+            kind: d.kind || d.featureID,
+            target: d.namespace ? `${d.namespace}/${d.name}` : d.name,
+            source: d.source,
+            status: d.status,
+            message: d.message,
+            lastAppliedTime: d.lastAppliedTime,
+        })),
+    }));
+}
+
+// clusterAddons gathers the add-ons of every enabled provider and links them
+// to the parameters that control them. It returns null when no provider is
+// enabled. A parameter controls an add-on when it writes a cluster label the
+// add-on selects on (metadata.labels.'<key>' path), or when its `addons`
+// config names the add-on explicitly.
+function clusterAddons(cluster) {
+    let enabled = false;
+    const items = [];
+    ADDON_PROVIDERS.forEach(adapter => {
+        const list = adapter(cluster);
+        if (!list) return;
+        enabled = true;
+        list.forEach(a => items.push(Object.assign(a, { params: [] })));
+    });
+    if (!enabled) return null;
+
+    const byParam = {};
+    (allClusterParameters || []).forEach(p => {
+        if (!p.key) return;
+        const labelKey = labelKeyFromPath(p.path);
+        const refs = p.addons || [];
+        const linked = items.filter(a =>
+            (labelKey && a.selectorLabels.includes(labelKey)) || refs.some(ref => addonMatchesRef(a, ref)));
+        if (linked.length === 0) return;
+        byParam[p.key.toLowerCase()] = linked;
+        linked.forEach(a => a.params.push(p));
+    });
+
+    items.sort((a, b) => bySeverity(a.state, b.state) || addonTitle(a).localeCompare(addonTitle(b)));
+    return {
+        providers: [...new Set(items.map(a => a.provider))],
+        items,
+        byParam,
+    };
+}
+
+function addonMatchesRef(addon, ref) {
+    return ref === addon.name
+        || ref === `${addon.kind}/${addon.name}`
+        || (!!addon.namespace && ref === `${addon.namespace}/${addon.name}`);
+}
+
+function addonRef(addon) {
+    return `${addon.kind}/${addon.namespace ? `${addon.namespace}/` : ''}${addon.name}`;
+}
+
+// The name users know an add-on by: the label of the parameter(s)
+// controlling it, else its own name.
+function addonTitle(addon) {
+    return addon.params.length > 0 ? addon.params.map(p => p.label || parameterLabel(p.key)).join(', ') : addon.name;
+}
+
+function addonDomId(cluster, addon) {
+    return `addon-${clusterDomId(cluster.namespace, cluster.name)}-${addon.provider}-${addonRef(addon)}`.replace(/[^A-Za-z0-9_.-]/g, '_');
+}
+
+function addonStatusClass(status) {
     switch (status) {
         case 'Provisioned':
             return 'ready';
@@ -316,73 +407,142 @@ function sveltosStatusClass(status) {
 }
 
 // Worst first, so problems are visible without scrolling.
-const SVELTOS_SEVERITY = { 'not-ready': 0, 'pending': 1, 'read-only': 2, 'ready': 3 };
+const ADDON_SEVERITY = { 'not-ready': 0, 'pending': 1, 'read-only': 2, 'ready': 3 };
 
-function bySveltosSeverity(a, b) {
-    return SVELTOS_SEVERITY[sveltosStatusClass(a)] - SVELTOS_SEVERITY[sveltosStatusClass(b)];
+function bySeverity(a, b) {
+    return ADDON_SEVERITY[addonStatusClass(a)] - ADDON_SEVERITY[addonStatusClass(b)];
 }
 
-function renderSveltosBadge(cluster) {
-    const sv = cluster.sveltos;
-    if (!sv || !sv.profiles || sv.profiles.length === 0) return '';
-    const title = `Sveltos add-ons: ${sv.profiles.length} profile(s) target this cluster`;
-    return `<div class="cluster-status ${sveltosStatusClass(sv.state)} sveltos-badge" title="${escapeHtml(title)}"><span class="material-symbols-outlined">extension</span>${escapeHtml(sv.state || 'Unknown')}</div>`;
+function worstStatus(statuses) {
+    return statuses.slice().sort(bySeverity)[0];
 }
 
-function renderSveltos(cluster) {
-    const sv = cluster.sveltos;
-    if (!sv) return '';
+// addonCounts summarises add-on states as "3/4 ready · 1 failing".
+function addonCounts(items) {
+    const count = cls => items.filter(a => addonStatusClass(a.state) === cls).length;
+    const parts = [`${count('ready')}/${items.length} ready`];
+    if (count('not-ready')) parts.push(`${count('not-ready')} failing`);
+    if (count('pending')) parts.push(`${count('pending')} in progress`);
+    if (count('read-only')) parts.push(`${count('read-only')} paused`);
+    return parts.join(' · ');
+}
 
-    const id = `sveltos-${clusterDomId(cluster.namespace, cluster.name)}`;
-    const profiles = (sv.profiles || []).slice().sort((a, b) => bySveltosSeverity(a.state, b.state));
-    const allDeployments = profiles.flatMap(p => p.deployments || []);
-    const failing = allDeployments.filter(d => sveltosStatusClass(d.status) === 'not-ready').length;
-    const pending = allDeployments.filter(d => sveltosStatusClass(d.status) === 'pending').length;
+// Compact add-on overview for the dashboard card: one chip per add-on,
+// named after the parameter controlling it, coloured by its state. Each
+// chip opens the add-on on the cluster page.
+const CARD_ADDON_LIMIT = 8;
 
-    const body = profiles.length === 0
-        ? '<div class="sveltos-empty">No Sveltos profile targets this cluster.</div>'
-        : profiles.map(p => {
-            const profileRef = p.namespace ? `${p.namespace}/${p.name}` : p.name;
+function renderAddonChips(cluster) {
+    const addons = clusterAddons(cluster);
+    if (!addons) return '';
+    const pageUrl = clusterPageUrl(cluster);
+    const shown = addons.items.slice(0, CARD_ADDON_LIMIT);
+    const more = addons.items.length - shown.length;
+
+    const chips = shown.map(a => {
+        const tip = [`${a.provider} ${addonRef(a)}: ${a.state || 'Unknown'}`];
+        if (a.params.length) tip.push(`Controlled by: ${a.params.map(p => p.label || parameterLabel(p.key)).join(', ')}`);
+        tip.push(`${a.deployments.length} deployment${a.deployments.length === 1 ? '' : 's'}`);
+        if (a.failureMessage) tip.push(a.failureMessage);
+        return `<a class="addon-chip ${addonStatusClass(a.state)}" href="${escapeHtml(pageUrl)}#${addonDomId(cluster, a)}" title="${escapeHtml(tip.join('\n'))}">
+                <span class="addon-dot"></span><span class="addon-chip-name">${escapeHtml(addonTitle(a))}</span>
+            </a>`;
+    }).join('');
+
+    const body = addons.items.length === 0
+        ? '<span class="addon-none">No add-on targets this cluster</span>'
+        : chips + (more > 0 ? `<a class="addon-chip more" href="${escapeHtml(pageUrl)}">+${more} more</a>` : '');
+
+    return `
+        <div class="cluster-addons">
+            <div class="groups-label">
+                <span class="material-symbols-outlined section-icon">extension</span>
+                Add-ons
+                ${addons.items.length ? `<span class="addon-counts">${escapeHtml(addonCounts(addons.items))}</span>` : ''}
+            </div>
+            <div class="addon-chips">${body}</div>
+        </div>`;
+}
+
+// addonStatusLink shows, next to a parameter on the cluster page, the state
+// of the add-on(s) it controls and jumps to them.
+function addonStatusLink(cluster, addons, key) {
+    const linked = addons && addons.byParam[key.toLowerCase()];
+    if (!linked) return '';
+    const status = worstStatus(linked.map(a => a.state)) || 'Unknown';
+    const label = linked.length === 1 ? status : `${linked.length} add-ons · ${status}`;
+    const title = linked.map(a => `${a.provider} ${addonRef(a)}: ${a.state || 'Unknown'}`).join('\n');
+    return `<a class="addon-link ${addonStatusClass(status)}" href="#${addonDomId(cluster, linked[0])}" title="${escapeHtml(title)}">
+            <span class="material-symbols-outlined">extension</span>${escapeHtml(label)}</a>`;
+}
+
+// Full add-on list for the cluster page.
+function renderAddons(cluster, addons) {
+    if (!addons) return '';
+    const nameJs = escapeJs(cluster.name);
+    const nsJs = escapeJs(cluster.namespace);
+
+    const body = addons.items.length === 0
+        ? '<div class="addon-note">No add-on targets this cluster.</div>'
+        : addons.items.map(a => {
             const notes = [];
-            if (p.paused) notes.push('<div class="sveltos-note">Reconciliation paused.</div>');
-            if (p.failureMessage) notes.push(`<div class="sveltos-note error">${escapeHtml(p.failureMessage)}</div>`);
-            const deployments = (p.deployments || []).slice()
-                .sort((a, b) => bySveltosSeverity(a.status, b.status))
-                .map(d => {
-                const target = d.namespace ? `${d.namespace}/${d.name}` : d.name;
-                const applied = d.lastAppliedTime ? `Last applied ${new Date(d.lastAppliedTime).toLocaleString()}` : '';
-                return `
-                    <li class="sveltos-deployment" title="${escapeHtml(applied)}">
-                        <div class="sveltos-deployment-main">
-                            <span class="sveltos-kind">${escapeHtml(d.kind || d.featureID)}</span>
-                            <span class="sveltos-target">${escapeHtml(target)}</span>
-                            ${d.source ? `<span class="sveltos-source">${escapeHtml(d.source)}</span>` : ''}
-                            <span class="cluster-status ${sveltosStatusClass(d.status)}">${escapeHtml(d.status || 'Unknown')}</span>
-                        </div>
-                        ${d.message ? `<div class="sveltos-note error">${escapeHtml(d.message)}</div>` : ''}
-                    </li>`;
+            if (a.paused) notes.push('<div class="addon-note">Reconciliation paused.</div>');
+            if (a.failureMessage) notes.push(`<div class="addon-note error">${escapeHtml(a.failureMessage)}</div>`);
+
+            const controls = a.params.map(p => {
+                const editBtn = canEditField(cluster, p.key)
+                    ? `<button class="edit-btn" onclick="openEditParameterModal('${nameJs}', '${nsJs}', '${escapeJs(p.key)}')" title="Edit"><span class="material-symbols-outlined">edit</span></button>`
+                    : '';
+                return `<span class="addon-param"><span class="material-symbols-outlined">tune</span>${escapeHtml(p.label || parameterLabel(p.key))}${editBtn}</span>`;
             }).join('');
+
+            const deployments = a.deployments.slice()
+                .sort((x, y) => bySeverity(x.status, y.status))
+                .map(d => {
+                    const applied = d.lastAppliedTime ? `Last applied ${new Date(d.lastAppliedTime).toLocaleString()}` : '';
+                    return `
+                    <li class="addon-deployment" title="${escapeHtml(applied)}">
+                        <div class="addon-deployment-main">
+                            <span class="addon-kind">${escapeHtml(d.kind || '')}</span>
+                            <span class="addon-target">${escapeHtml(d.target || '')}</span>
+                            <span class="cluster-status ${addonStatusClass(d.status)}">${escapeHtml(d.status || 'Unknown')}</span>
+                        </div>
+                        ${d.source ? `<div class="addon-source">${escapeHtml(d.source)}</div>` : ''}
+                        ${d.message ? `<div class="addon-note error">${escapeHtml(d.message)}</div>` : ''}
+                    </li>`;
+                }).join('');
+
+            const hasTitle = a.params.length > 0;
             return `
-                <div class="sveltos-profile">
-                    <div class="sveltos-profile-header">
-                        <span class="sveltos-profile-name">${escapeHtml(p.kind || 'Profile')}/${escapeHtml(profileRef)}</span>
-                        <span class="cluster-status ${sveltosStatusClass(p.state)}">${escapeHtml(p.state || 'Unknown')}</span>
+                <div class="addon-card ${addonStatusClass(a.state)}" id="${addonDomId(cluster, a)}">
+                    <div class="addon-card-header">
+                        <div class="addon-card-title">
+                            <span class="addon-name">${escapeHtml(hasTitle ? addonTitle(a) : a.name)}</span>
+                            <span class="addon-ref">${escapeHtml(a.provider)} ${escapeHtml(addonRef(a))}</span>
+                        </div>
+                        <span class="cluster-status ${addonStatusClass(a.state)}">${escapeHtml(a.state || 'Unknown')}</span>
                     </div>
-                    <div class="sveltos-summary-ref">ClusterSummary ${escapeHtml(cluster.namespace)}/${escapeHtml(p.clusterSummary)}</div>
+                    ${controls ? `<div class="addon-params"><span class="addon-meta-label">Controlled by</span>${controls}</div>` : ''}
+                    ${a.detail ? `<div class="addon-meta">${escapeHtml(a.detail)}</div>` : ''}
+                    ${a.selectorLabels.length ? `<div class="addon-meta">Selects clusters on ${escapeHtml(a.selectorLabels.join(', '))}</div>` : ''}
                     ${notes.join('')}
-                    ${deployments ? `<ul class="sveltos-deployments">${deployments}</ul>` : '<div class="sveltos-empty">Nothing to deploy.</div>'}
+                    ${deployments ? `<ul class="addon-deployments">${deployments}</ul>` : '<div class="addon-note">Nothing to deploy.</div>'}
                 </div>`;
         }).join('');
 
-    const counts = [`${profiles.length} profile${profiles.length === 1 ? '' : 's'}`,
-        `${allDeployments.length} deployment${allDeployments.length === 1 ? '' : 's'}`];
-    if (failing) counts.push(`${failing} failing`);
-    if (pending) counts.push(`${pending} pending`);
+    const deploymentCount = addons.items.reduce((n, a) => n + a.deployments.length, 0);
+    const counts = addons.items.length
+        ? `${addonCounts(addons.items)} · ${deploymentCount} deployment${deploymentCount === 1 ? '' : 's'}`
+        : '';
     return `
-        <div class="more-details sveltos-details expanded" id="${id}">
-            <div class="sveltos-counts">${escapeHtml(counts.join(' · '))}</div>
-            <div class="sveltos-grid">${body}</div>
-        </div>
+        <section class="detail-section">
+            <h4 class="section-title">
+                <span class="material-symbols-outlined">extension</span>Add-ons
+                ${addons.providers.map(p => `<span class="provider-tag">${escapeHtml(p)}</span>`).join('')}
+                ${counts ? `<span class="section-counts">${escapeHtml(counts)}</span>` : ''}
+            </h4>
+            <div class="addon-grid">${body}</div>
+        </section>
     `;
 }
 

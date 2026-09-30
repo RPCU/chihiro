@@ -385,20 +385,49 @@ sveltos:
 
 Sveltos creates one `ClusterSummary` (`config.projectsveltos.io/v1beta1`) per
 (profile, cluster) pair, in the cluster's namespace. Chihiro watches them all
-and, for each CAPI cluster (`spec.clusterType: Capi`), shows:
+and turns each `ClusterProfile`/`Profile` targeting a CAPI cluster
+(`spec.clusterType: Capi`) into an **add-on**, with every deployment the
+profile defines — Helm charts (`helmCharts`), resources (`policyRefs`) and
+Kustomize sources (`kustomizationRefs`) — and its Sveltos feature status
+(`Provisioned`, `Provisioning`, `Failed`, …) and failure message. A Helm
+release already managed by another profile shows as `Conflict`.
 
-- a header badge with the worst state across all profiles targeting it
-  (`Failed` > `Removing` > `Provisioning` > `Paused` > `Provisioned`);
-- an **Add-ons (Sveltos)** section on the cluster page listing each `ClusterProfile`/`Profile` that targets the
-  cluster, the `ClusterSummary` linking them, and every deployment the profile
-  defines — Helm charts (`helmCharts`), resources (`policyRefs`) and Kustomize
-  sources (`kustomizationRefs`) — each with its Sveltos feature status
-  (`Provisioned`, `Provisioning`, `Failed`, …) and failure message. A Helm
-  release already managed by another profile shows as `Conflict`.
+- **Dashboard cards** show an **Add-ons** row: one chip per add-on, coloured by
+  state (failing first), with a `ready/failing/in progress` summary. Each chip
+  opens that add-on on the cluster page.
+- **Cluster page** (`/clusters/<namespace>/<name>`, opened with the card's
+  **More details** button or the cluster name) lists every parameter and every
+  add-on. Parameters that control an add-on show its state and link to it; each
+  add-on card shows the parameter(s) controlling it (with their edit button),
+  the `ClusterSummary`, the label keys its cluster selector uses and each
+  deployment.
 
-The add-ons badge shows on every card; the full list (and all parameters) is
-on each cluster's dedicated page (`/clusters/<namespace>/<name>`), opened with
-the card's **More details** button or by clicking the cluster name.
+#### Linking parameters to add-ons
+
+Nothing is hardcoded: chihiro links a parameter to an add-on when
+
+1. the parameter writes a cluster label (`path: metadata.labels.'<key>'`) and
+   the add-on's cluster selector (`matchLabels`/`matchExpressions`) uses that
+   label key — e.g. a `cilium` boolean writing
+   `addons.example.io/cilium` is linked to the ClusterProfile selecting on
+   `addons.example.io/cilium`; or
+2. the parameter lists the add-on in `addons` — for parameters that don't
+   write a label. Entries match an add-on by `name`, `<kind>/<name>` or
+   `<namespace>/<name>`:
+
+```yaml
+parameters:
+  imageName:
+    type: select
+    path: 'spec.topology.variables[2].value'
+    addons: ['ClusterProfile/node-tuning']
+```
+
+A linked add-on is shown under the parameter's label, so users see "Cilium
+CNI" rather than a profile name. The UI renders add-ons through a
+provider-agnostic adapter (`ADDON_PROVIDERS` in `web/static/js/clusters.js`),
+so another add-on provider can be plugged in by exposing its status on the
+cluster object and adding an adapter.
 
 The status is part of the cluster object, so it follows the same per-user
 access rules and is also returned by the MCP `describe_cluster` tool. If the
@@ -441,6 +470,7 @@ becomes a form input.
 | `visible_groups`             | []string | Restrict who can see/edit. Empty = everyone. Admins always see.                                                                                                                  |
 | `recompute_on`               | []string | List of fields whose change should re-resolve this parameter. Useful when a parameter depends on another but the dependency can't be inferred from `constrain` metadata.         |
 | `implies`                    | list     | Declares fields this parameter sets when edited. Each entry is `{field, source}` where `field` is the target field and `source` is a map of allowed values to the value to push. |
+| `addons`                     | []string | Add-ons this parameter controls, for the UI to link them (see [Linking parameters to add-ons](#linking-parameters-to-add-ons)). Label-writing parameters are linked automatically. |
 
 ```yaml
 parameters:

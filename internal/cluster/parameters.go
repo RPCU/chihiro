@@ -67,6 +67,12 @@ type TemplateParameter struct {
 	// visible/editable to all authenticated users (subject to the Editable
 	// flag). The value is always shown in the "More details" read-only section.
 	VisibleGroups []string `json:"visibleGroups,omitempty"`
+	// Addons explicitly names the add-ons (e.g. Sveltos ClusterProfiles) this
+	// parameter controls, for the UI to link them. Parameters writing a cluster
+	// label are linked automatically to add-ons selecting on that label; this
+	// covers the rest. Entries match an add-on by name, "<kind>/<name>" or
+	// "<namespace>/<name>".
+	Addons []string `json:"addons,omitempty"`
 }
 
 type parameterConfig struct {
@@ -85,6 +91,7 @@ type parameterConfig struct {
 	RecomputeOn   []string    `mapstructure:"recompute_on"`
 	Implies       interface{} `mapstructure:"implies"`
 	VisibleGroups []string    `mapstructure:"visible_groups"`
+	Addons        []string    `mapstructure:"addons"`
 }
 
 func DiscoverParameters(templateStr string) []TemplateParameter {
@@ -149,6 +156,7 @@ func DiscoverParameters(templateStr string) []TemplateParameter {
 			p.RecomputeOn = cfg.RecomputeOn
 			p.Implies = normalizeImplies(cfg.Implies)
 			p.VisibleGroups = cfg.VisibleGroups
+			p.Addons = cfg.Addons
 			if p.Type == "boolean" {
 				p.TrueValue, p.FalseValue = boolValueStrings(cfg)
 				// For booleans the default is the on/off state ("true"/"false"),
@@ -247,6 +255,7 @@ func loadParameterConfig() map[string]parameterConfig {
 			RecomputeOn:   getStringSlice(fields, "recompute_on"),
 			Implies:       fields["implies"],
 			VisibleGroups: getStringSlice(fields, "visible_groups"),
+			Addons:        getStringSlice(fields, "addons"),
 		}
 		result[key] = cfg
 	}

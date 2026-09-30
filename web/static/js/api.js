@@ -188,6 +188,9 @@ function loadClusterParameters() {
         .then(([filtered, all]) => {
             clusterParameters = filtered || [];
             allClusterParameters = all || [];
+            // Cards may have rendered before the parameter metadata arrived;
+            // re-render so labels and add-on links use it.
+            if (currentClustersList.length > 0) updateClusters(currentClustersList);
         })
         .catch(error => {
             console.error('Error loading cluster parameters:', error);

@@ -1,6 +1,7 @@
 package sveltos
 
 import (
+	"reflect"
 	"testing"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -133,5 +134,45 @@ func TestAggregateWorstStateWins(t *testing.T) {
 	}
 	if got := out["ns/prod"]; got.State != StateProvisioned {
 		t.Errorf("unexpected prod status: %+v", got)
+	}
+}
+
+func TestSelectorLabelKeys(t *testing.T) {
+	sel := map[string]interface{}{
+		"matchLabels": map[string]interface{}{"addons.example.io/cilium": "enabled", "env": "dev"},
+		"matchExpressions": []interface{}{
+			map[string]interface{}{"key": "addons.example.io/csi", "operator": "In", "values": []interface{}{"on"}},
+			map[string]interface{}{"key": "env", "operator": "Exists"},
+		},
+	}
+	got := selectorLabelKeys(sel)
+	want := []string{"addons.example.io/cilium", "addons.example.io/csi", "env"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("selectorLabelKeys(map) = %v, want %v", got, want)
+	}
+	if got := selectorLabelKeys("env=prod,tier in (a,b)"); !reflect.DeepEqual(got, []string{"env", "tier"}) {
+		t.Errorf("selectorLabelKeys(string) = %v", got)
+	}
+	if got := selectorLabelKeys(nil); got != nil {
+		t.Errorf("selectorLabelKeys(nil) = %v, want nil", got)
+	}
+}
+
+func TestParseClusterSummarySelectorLabels(t *testing.T) {
+	obj := clusterSummary("cilium-capi-dev-1",
+		map[string]interface{}{clusterProfileLabel: "cilium"},
+		capiSpec(map[string]interface{}{
+			"clusterSelector": map[string]interface{}{
+				"matchLabels": map[string]interface{}{"addons.example.io/cilium": "enabled"},
+			},
+		}),
+		nil,
+	)
+	s, ok := parseClusterSummary(obj)
+	if !ok {
+		t.Fatal("expected summary to be parsed")
+	}
+	if !reflect.DeepEqual(s.profile.SelectorLabels, []string{"addons.example.io/cilium"}) {
+		t.Errorf("SelectorLabels = %v", s.profile.SelectorLabels)
 	}
 }

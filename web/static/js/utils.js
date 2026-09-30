@@ -128,9 +128,17 @@ function optionConstraintValues(o, field) {
 }
 
 function extractLabelValue(path, labels) {
-    if (!path || !labels) return undefined;
-    const m = path.match(/^metadata\.labels\.'([^']+)'$/);
-    return m ? labels[m[1]] : undefined;
+    const key = labelKeyFromPath(path);
+    if (!key || !labels) return undefined;
+    return labels[key];
+}
+
+// labelKeyFromPath returns the label key a parameter path writes
+// (metadata.labels.'<key>' or metadata.labels.<key>), or null.
+function labelKeyFromPath(path) {
+    if (!path) return null;
+    const m = path.match(/^metadata\.labels\.(?:'([^']+)'|([^.']+))$/);
+    return m ? (m[1] || m[2]) : null;
 }
 
 // Map a CAPI cluster phase to a status badge style.
