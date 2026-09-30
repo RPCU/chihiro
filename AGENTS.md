@@ -193,7 +193,8 @@ When asked to ship a change, follow this sequence:
    ```sh
    gh pr checks --watch
    ```
-   All required checks (`linting.yaml`, `nix-build.yaml`) must pass. If one
+   All checks (`linting.yaml`, `ci.yaml`, and `nix-build.yaml` when it runs)
+   must pass. If one
    fails, fix, commit, push, and re-watch — do not declare done on red CI.
 8. **Ask for final validation.** Report the PR link and CI status back to the
    user and wait for their approval before merging. Never merge a PR unless
@@ -201,16 +202,23 @@ When asked to ship a change, follow this sequence:
 
 ## CI / CD
 
-Three GitHub Actions workflows under `.github/workflows/`:
+GitHub Actions workflows under `.github/workflows/`:
 
 - **linting.yaml** — runs on PRs. Installs `gofumpt` and `golines`, enforces
   zero diff from `gofumpt -d .` and max line length 160 via `golines --dry-run`.
-- **nix-build.yaml** — runs on PRs and pushes. Builds binaries and OCI image
-  via Nix (`nix/binaries.nix`, `nix/oci.nix`).
-- **push.yaml** — triggered by tag pushes (`*.*.*`) and manual dispatch.
-  Builds an OCI image with Nix, pushes to Docker Hub via `skopeo`. Also runs
-  GoReleaser (`goreleaser.yaml`) to produce cross-platform tar.gz archives
-  with ldflags injecting `cmd.Version` and `cmd.Commit`.
+- **ci.yaml** — PRs and pushes to main: `go vet`, `go test`, `go build` with
+  the setup-go module/build cache.
+- **image.yaml** — pushes to main and tags: builds the `Dockerfile` and pushes
+  `zot.rpcu.io/public/chihiro:<8-char SHA>` (plus `:<tag>` for tags), with the
+  Go caches persisted across runs. Needs the `REGISTRY_USER` /
+  `REGISTRY_PASSWORD` secrets (a zot push user). Deployment: OpenChoreo's
+  `prebuilt-image` workflow (hestia) waits for that exact tag, then publishes
+  the workload — keep the tag scheme in sync.
+- **nix-build.yaml** — only when `go.mod`, `go.sum` or `nix/` change: builds
+  `nix/oci.nix` (tests off; ci.yaml runs them) to catch a stale `vendorHash`.
+- **push.yaml** — tag pushes (`*.*.*`) and manual dispatch: GoReleaser
+  (`goreleaser.yaml`) cross-platform tar.gz archives with ldflags injecting
+  `cmd.Version` and `cmd.Commit`.
 
 Release artifacts are built with `CGO_ENABLED=0` for linux/amd64, arm64, arm.
 

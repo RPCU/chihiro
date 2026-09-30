@@ -1,0 +1,11 @@
+.git
+.github
+.devenv*
+.direnv
+assets
+manifests
+nix
+result*
+chihiro
+*.md
+config.yaml

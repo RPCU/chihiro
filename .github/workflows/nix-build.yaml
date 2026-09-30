@@ -1,10 +1,22 @@
 name: Nix Build
 
+# Only when the Nix build's inputs change (e.g. a dependency bump needing a
+# new vendorHash). Every other change is vetted, tested and built by ci.yaml.
 on:
   push:
     branches: [main]
+    paths:
+      - go.mod
+      - go.sum
+      - nix/**
+      - .github/workflows/nix-build.yaml
   pull_request:
     branches: [main]
+    paths:
+      - go.mod
+      - go.sum
+      - nix/**
+      - .github/workflows/nix-build.yaml
 
 jobs:
   build:
@@ -16,8 +28,7 @@ jobs:
         with:
           nix_path: nixpkgs=channel:nixos-unstable
 
-      - name: Build binaries
-        run: nix-build nix/binaries.nix
-
+      # The image contains the binaries, so this builds them once and verifies
+      # vendorHash. Tests run in ci.yaml.
       - name: Build OCI image
-        run: nix-build nix/oci.nix
+        run: nix-build nix/oci.nix --argstr doCheck false

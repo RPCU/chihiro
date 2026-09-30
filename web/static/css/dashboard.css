@@ -750,6 +750,9 @@
         .addon-note {
             margin-top: 6px;
         }
+        .addon-note.section-note {
+            margin: -6px 0 12px;
+        }
         .addon-note.error {
             color: var(--md-sys-color-error);
             white-space: pre-wrap;

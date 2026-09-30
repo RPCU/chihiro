@@ -755,6 +755,7 @@ function renderAddons(cluster, addons) {
                 ${addons.providers.map(p => `<span class="provider-tag">${escapeHtml(p)}</span>`).join('')}
                 ${counts ? `<span class="section-counts">${escapeHtml(counts)}</span>` : ''}
             </h4>
+            ${renderDeployedResourcesError()}
             <div class="addon-grid">${body}</div>
         </section>
     `;
