@@ -55,7 +55,8 @@ function workerGroupRowHTML(idx, values, prefix) {
     let headerInput;
     if (nameField) {
         const nameVal = (values && values.name !== undefined) ? values.name : (nameField.default || '');
-        headerInput = workerGroupFieldInputHTML(nameField, idx, prefix, nameVal).replace('class="wg-field', 'class="wg-name wg-field');
+        headerInput = workerGroupFieldInputHTML(nameField, idx, prefix, nameVal)
+            .replace('class="wg-field', `aria-label="${escapeHtml(nameField.label || 'Group name')}" class="wg-name wg-field`);
     } else {
         headerInput = '<span></span>';
     }
@@ -63,15 +64,17 @@ function workerGroupRowHTML(idx, values, prefix) {
     const details = otherFields.map(f => {
         let v = (values && values[f.key] !== undefined) ? values[f.key] : (f.default || '');
         return `
-            <span class="wg-label">${escapeHtml(f.label || f.key)}</span>
-            ${workerGroupFieldInputHTML(f, idx, prefix, v)}
+            <label class="wg-cell${f.type === 'number' ? ' wg-cell-number' : ''}">
+                <span class="wg-label">${escapeHtml(f.label || f.key)}</span>
+                ${workerGroupFieldInputHTML(f, idx, prefix, v)}
+            </label>
         `;
     }).join('');
 
     return `
         <div class="wg-header">
             ${headerInput}
-            <button type="button" class="edit-btn" onclick="remove${prefix === 'create' ? 'Create' : 'Edit'}WorkerGroup(${idx})" style="color: var(--md-sys-color-error); border-color: var(--md-sys-color-error); flex: 0 0 auto;">
+            <button type="button" class="icon-btn danger" onclick="remove${prefix === 'create' ? 'Create' : 'Edit'}WorkerGroup(${idx})" title="Remove group" aria-label="Remove group">
                 <span class="material-symbols-outlined">delete</span>
             </button>
         </div>
@@ -120,6 +123,7 @@ function addCreateWorkerGroup(values) {
 function removeCreateWorkerGroup(idx) {
     const el = document.getElementById(`create-wg-${idx}`);
     if (el) el.remove();
+    onCreateFieldInput('workers');
 }
 
 function addEditWorkerGroup(values) {

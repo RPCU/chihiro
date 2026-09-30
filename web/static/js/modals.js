@@ -1,9 +1,9 @@
 // Modal open/close functions for all dashboard modals.
 
 function openCreateModal() {
-    console.log('Opening create modal, isAdmin:', isAdmin);
+    resetCreateFormState();
     document.getElementById('createModalOverlay').style.display = 'flex';
-    loadLimitsInfo(); // Load and display limits
+    loadLimitsInfo(); // Live quota check
     renderDynamicParameters();
 
     // Re-render dynamic parameters when the cluster name changes so
@@ -20,20 +20,33 @@ function openCreateModal() {
     createGroupIndex = 0;
     addCreateWorkerGroup(defaultWorkerGroupValues());
 
-    if (isAdmin) {
-        console.log('Admin user - showing text input');
-        document.getElementById('groupsSection').style.display = 'none';
-        document.getElementById('groupsTextSection').style.display = 'block';
-    } else {
-        console.log('Regular user - showing dropdown');
-        document.getElementById('groupsSection').style.display = 'block';
-        document.getElementById('groupsTextSection').style.display = 'none';
+    // Admins may assign any group (free text); others pick among their own.
+    document.getElementById('groupsSection').style.display = isAdmin ? 'none' : 'block';
+    document.getElementById('groupsTextSection').style.display = isAdmin ? 'block' : 'none';
+    renderGroupChoiceChips();
+    renderAdminGroupPreview();
+
+    // Skip the Options step when no parameter is configured.
+    const hasOptions = (clusterParameters || []).length > 0;
+    document.getElementById('createOptionsSection').hidden = !hasOptions;
+    document.getElementById('accessStep').textContent = hasOptions ? '4' : '3';
+
+    // Preselect the newest version: most clusters want it.
+    const versionSelect = document.getElementById('clusterVersion');
+    if (versionSelect && !versionSelect.value && availableVersions.length > 0) {
+        versionSelect.value = availableVersions.slice().sort(compareVersions).pop();
+        renderDynamicParameters();
     }
+
+    updateCreateSummary();
+    setTimeout(() => nameInput && nameInput.focus(), 50);
 }
 
 function closeCreateModal() {
     document.getElementById('createModalOverlay').style.display = 'none';
     document.getElementById('createClusterForm').reset();
+    Array.from(document.getElementById('clusterGroups').options).forEach(o => { o.selected = false; });
+    resetCreateFormState();
 }
 
 function openEditGroupsModal(name, namespace, currentGroups) {

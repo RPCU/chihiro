@@ -358,6 +358,12 @@ function renderDynamicParameters() {
     });
 
     container.innerHTML = '';
+    // Options (booleans) render as a grid of toggle cards, everything else
+    // as a grid of fields.
+    const fieldsGrid = document.createElement('div');
+    fieldsGrid.className = 'form-grid';
+    const togglesGrid = document.createElement('div');
+    togglesGrid.className = 'toggle-grid';
 
     const builtins = {
         version: document.getElementById('clusterVersion').value || '',
@@ -395,21 +401,25 @@ function renderDynamicParameters() {
 
         let input;
         if (p.type === 'boolean') {
-            // Render a checkbox; the value collected is "true"/"false".
+            // A toggle card: the whole card is the label, with a switch;
+            // the value collected is "true"/"false".
             input = document.createElement('input');
             input.type = 'checkbox';
             input.id = 'param_' + p.key;
-            input.style.width = 'auto';
-            input.style.marginRight = '8px';
+            input.className = 'switch';
             // valueToApply is "true"/"false" (string).
             const isOn = (valueToApply === undefined || valueToApply === '')
                 ? (p.default === 'true')
                 : (valueToApply === 'true' || valueToApply === true);
             input.checked = isOn;
-            // Put the checkbox before the label text for a natural layout.
-            label.style.display = 'flex';
-            label.style.alignItems = 'center';
-            label.insertBefore(input, label.firstChild);
+            group.className = 'toggle-card';
+            label.textContent = '';
+            label.className = 'toggle-label';
+            const text = document.createElement('span');
+            text.className = 'toggle-text';
+            text.textContent = p.label || parameterLabel(p.key);
+            label.appendChild(text);
+            label.appendChild(input);
         } else if (p.type === 'select' || (isAutoResolved && p.options && p.options.length > 0)) {
             input = document.createElement('select');
             input.id = 'param_' + p.key;
@@ -506,10 +516,17 @@ function renderDynamicParameters() {
 
         if (p.description) {
             const small = document.createElement('small');
-            small.style.color = 'var(--md-sys-color-on-surface-variant)';
-            small.style.fontSize = '0.8rem';
+            small.className = 'field-hint';
             small.textContent = p.description;
-            group.appendChild(small);
+            if (p.type === 'boolean') label.appendChild(small);
+            else group.appendChild(small);
+        }
+        if (p.type !== 'boolean') {
+            input.addEventListener('input', () => onCreateFieldInput('param:' + p.key));
+            const err = document.createElement('small');
+            err.className = 'field-error';
+            err.id = 'param_' + p.key + 'Error';
+            group.appendChild(err);
         }
 
         if (isAutoResolved) {
@@ -521,8 +538,10 @@ function renderDynamicParameters() {
             group.appendChild(note);
         }
 
-        container.appendChild(group);
+        (p.type === 'boolean' ? togglesGrid : fieldsGrid).appendChild(group);
     });
+    if (fieldsGrid.children.length) container.appendChild(fieldsGrid);
+    if (togglesGrid.children.length) container.appendChild(togglesGrid);
 
     // After rendering, apply initial version-based filtering: grey out
     // image options that don't match the current Kubernetes version.

@@ -2,38 +2,16 @@
 
 // collectCreateClusterPayload reads the create form into the request
 // body shared by both the create and preview endpoints. It validates the
-// inputs and shows an alert + returns null if anything is invalid.
+// inputs (showing the errors inline, see create-form.js) and returns null
+// if anything is invalid.
 function collectCreateClusterPayload() {
-    const name = document.getElementById('clusterName').value;
+    if (!checkCreateForm()) return null;
+
+    const name = document.getElementById('clusterName').value.trim();
     const version = document.getElementById('clusterVersion').value;
-    const controlPlaneReplicas = parseInt(document.getElementById('clusterControlPlaneReplicas').value);
-    let groups = '';
-
-    if (isAdmin) {
-        groups = document.getElementById('clusterGroupsText').value;
-    } else {
-        const selectedOptions = Array.from(document.getElementById('clusterGroups').selectedOptions);
-        groups = selectedOptions.map(option => option.value).join(',');
-    }
-
-    // Collect worker groups
+    const controlPlaneReplicas = parseInt(document.getElementById('clusterControlPlaneReplicas').value, 10);
+    const groups = (isAdmin ? adminGroupList() : selectedGroupList()).join(',');
     const workerGroups = collectWorkerGroups('create');
-    if (workerGroups.length === 0) {
-        alert('At least one worker group is required');
-        return null;
-    }
-
-    // Validate control plane replicas
-    if (controlPlaneReplicas < 1) {
-        alert('Control plane replicas must be at least 1');
-        return null;
-    }
-
-    // Non-admin users must select at least one group
-    if (!isAdmin && (!groups || groups.trim() === '')) {
-        alert('You must assign at least one of your groups to the cluster');
-        return null;
-    }
 
     // Collect dynamic template parameters
     const parameters = {};
@@ -86,7 +64,7 @@ function previewClusterYaml(triggerBtn) {
     })
     .catch(error => {
         console.error('Error rendering preview:', error);
-        alert('Failed to render preview: ' + error.message);
+        showCreateError('Could not render the preview: ' + error.message);
     })
     .finally(() => {
         setButtonLoading(triggerBtn, false);
@@ -174,7 +152,8 @@ document.getElementById('createClusterForm').addEventListener('submit', function
     const payload = collectCreateClusterPayload();
     if (!payload) return;
 
-    const submitBtn = e.submitter;
+    const submitBtn = e.submitter || this.querySelector('button[type=submit]');
+    hideCreateError();
     setButtonLoading(submitBtn, true, 'Creating…');
 
     fetch('/api/clusters', {
@@ -187,15 +166,16 @@ document.getElementById('createClusterForm').addEventListener('submit', function
         if (response.ok) {
             closeCreateModal();
             loadClusters(); // Refresh clusters
+            showToast(`Cluster "${payload.name}" is being created. It appears as Provisioning until it's ready.`, 'success');
         } else {
-            return response.json().then(data => {
-                throw new Error(data.error || 'Failed to create cluster');
+            return response.json().catch(() => ({})).then(data => {
+                throw new Error(data.error || `HTTP ${response.status}`);
             });
         }
     })
     .catch(error => {
         console.error('Error creating cluster:', error);
-        alert('Failed to create cluster: ' + error.message);
+        showCreateError('The cluster was not created: ' + error.message);
     })
     .finally(() => {
         setButtonLoading(submitBtn, false);
