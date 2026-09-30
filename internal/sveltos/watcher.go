@@ -17,6 +17,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/dynamic"
@@ -104,8 +105,12 @@ type ProfileStatus struct {
 	State          string `json:"state"`
 	// FailureMessage reports errors reconciling the ClusterSummary itself,
 	// as opposed to per-deployment errors.
-	FailureMessage string          `json:"failureMessage,omitempty"`
-	Paused         bool            `json:"paused,omitempty"`
+	FailureMessage string `json:"failureMessage,omitempty"`
+	Paused         bool   `json:"paused,omitempty"`
+	// SelectorLabels are the cluster label keys the profile's clusterSelector
+	// matches on. Chihiro parameters that write one of these labels are shown
+	// as controlling the profile.
+	SelectorLabels []string        `json:"selectorLabels,omitempty"`
 	Features       []FeatureStatus `json:"features"`
 	Deployments    []Deployment    `json:"deployments"`
 }
@@ -371,6 +376,7 @@ func parseClusterSummary(obj *unstructured.Unstructured) (summary, bool) {
 
 	profileSpec, _ := spec["clusterProfileSpec"].(map[string]interface{})
 	profile.Deployments = parseDeployments(profileSpec, status, features)
+	profile.SelectorLabels = selectorLabelKeys(profileSpec["clusterSelector"])
 	profile.FailureMessage, _ = status["failureMessage"].(string)
 	profile.Paused, _ = status["reconciliationSuspended"].(bool)
 	profile.State = profileState(&profile, obj.GetDeletionTimestamp() != nil)
@@ -458,6 +464,42 @@ func parseDeployments(profileSpec, status map[string]interface{}, features map[s
 	}
 
 	return deployments
+}
+
+// selectorLabelKeys returns the sorted label keys a clusterSelector uses.
+// v1beta1 profiles embed a LabelSelector (matchLabels/matchExpressions);
+// older ones use a "key=value,..." selector string.
+func selectorLabelKeys(v interface{}) []string {
+	keys := make(map[string]struct{})
+	switch sel := v.(type) {
+	case string:
+		if parsed, err := labels.Parse(sel); err == nil {
+			reqs, _ := parsed.Requirements()
+			for _, r := range reqs {
+				keys[r.Key()] = struct{}{}
+			}
+		}
+	case map[string]interface{}:
+		if ml, ok := sel["matchLabels"].(map[string]interface{}); ok {
+			for k := range ml {
+				keys[k] = struct{}{}
+			}
+		}
+		for _, expr := range listOfMaps(sel["matchExpressions"]) {
+			if k, ok := expr["key"].(string); ok && k != "" {
+				keys[k] = struct{}{}
+			}
+		}
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(keys))
+	for k := range keys {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func listOfMaps(v interface{}) []map[string]interface{} {
