@@ -34,6 +34,14 @@ let
     config = {
       User = "1001:0";
       Entrypoint = [ "/chihiro" ];
+      # Default to serving with the config at /config.yaml, so runtimes that
+      # only set the image (e.g. OpenChoreo workloads, which cannot set args)
+      # start the server instead of printing usage and exiting. Deployments
+      # that pass their own command/args are unaffected.
+      Cmd = [
+        "serve"
+        "--config=/config.yaml"
+      ];
       Env = [
         "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
         "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
