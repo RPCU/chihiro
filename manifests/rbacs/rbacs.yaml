@@ -49,6 +49,10 @@ rules:
   - apiGroups: ['config.projectsveltos.io']
     resources: ['clustersummaries']
     verbs: ['get', 'list', 'watch']
+  # Resources each Sveltos profile deployed (cluster page, read on demand)
+  - apiGroups: ['config.projectsveltos.io']
+    resources: ['clusterconfigurations']
+    verbs: ['get']
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

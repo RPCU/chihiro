@@ -395,12 +395,16 @@ release already managed by another profile shows as `Conflict`.
 - **Dashboard cards** show an **Add-ons** row: one chip per add-on, coloured by
   state (failing first), with a `ready/failing/in progress` summary. Each chip
   opens that add-on on the cluster page.
-- **Cluster page** (`/clusters/<namespace>/<name>`, opened with the card's
-  **More details** button or the cluster name) lists every parameter and every
-  add-on. Parameters that control an add-on show its state and link to it; each
-  add-on card shows the parameter(s) controlling it (with their edit button),
-  the `ClusterSummary`, the label keys its cluster selector uses and each
-  deployment.
+- **Cluster page** (`/clusters/<namespace>/<name>`, see
+  [Cluster page](#cluster-page)) lists every parameter and every add-on.
+  Parameters that control an add-on show its state and link to it; each add-on
+  card shows the parameter(s) controlling it (with their edit button), the
+  profile's sync mode, tier and `dependsOn`, the state of each Sveltos feature
+  (Helm, Resources, Kustomize) with its last apply time and retry count, the
+  `ClusterSummary`, the label keys its cluster selector uses and each
+  deployment (Helm repository, and a newer chart version when Sveltos reports
+  one). An expandable **deployed resources** list shows what the profile
+  actually applied, read from the cluster's Sveltos `ClusterConfiguration`.
 
 #### Linking parameters to add-ons
 
@@ -434,14 +438,43 @@ access rules and is also returned by the MCP `describe_cluster` tool. If the
 ClusterSummary CRD is not installed, chihiro logs a warning and retries every
 minute, so Sveltos can be installed after chihiro.
 
-The service account needs read access to ClusterSummaries (already included
-in `manifests/rbacs/rbacs.yaml`):
+The service account needs read access to ClusterSummaries, and `get` on
+ClusterConfigurations for the deployed resources list (both already included
+in `manifests/rbacs/rbacs.yaml`; without the latter, the rest of the add-on
+status still works):
 
 ```yaml
 - apiGroups: ['config.projectsveltos.io']
   resources: ['clustersummaries']
   verbs: ['get', 'list', 'watch']
+- apiGroups: ['config.projectsveltos.io']
+  resources: ['clusterconfigurations']
+  verbs: ['get']
 ```
+
+## Cluster page
+
+The dashboard shows one card per cluster: status, control plane and worker
+readiness (from the CAPI v1beta2 `status.controlPlane`/`status.workers`
+replica counts, or the spec counts on older clusters), the most important
+unhealthy condition, add-on chips and access groups. The stat tiles and the
+search box/status chips above the cards filter the list (**Issues** = a failing
+condition or add-on).
+
+Each cluster has its own page at `/clusters/<namespace>/<name>` (card name or
+**More details**), with a section nav:
+
+- **Overview** — ClusterClass, infrastructure and control plane providers,
+  failure domains, worker groups, networking (with a copyable API endpoint),
+  access groups, creator and the cluster's labels.
+- **Health** — every CAPI condition with reason, message and age, problems
+  first.
+- **Machines** — the cluster's `Machine`s grouped by control plane and
+  MachineDeployment: phase/readiness, version, node, OS, address, failure
+  domain and age. Read on demand from `GET /api/clusters/<name>/details`
+  (refreshed every 20s while the page is open), which applies the same access
+  check as the cluster list.
+- **Parameters** and **Add-ons** — see [Sveltos integration](#sveltos-integration).
 
 ## Cluster templating
 

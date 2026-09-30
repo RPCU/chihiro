@@ -64,6 +64,11 @@ type FeatureStatus struct {
 	Status          string     `json:"status"`
 	FailureMessage  string     `json:"failureMessage,omitempty"`
 	LastAppliedTime *time.Time `json:"lastAppliedTime,omitempty"`
+	// ConsecutiveFailures counts failed deployment attempts in a row.
+	ConsecutiveFailures int `json:"consecutiveFailures,omitempty"`
+	// DeployedKinds are the resource kinds this feature deployed, as
+	// "Kind.version.group" (e.g. "Deployment.v1.apps").
+	DeployedKinds []string `json:"deployedKinds,omitempty"`
 }
 
 // Deployment is one item a profile deploys on a cluster: a Helm chart
@@ -82,6 +87,14 @@ type Deployment struct {
 	// Source describes where it comes from: "<repo>/<chart>@<version>" for
 	// Helm, the path for Kustomize.
 	Source string `json:"source,omitempty"`
+	// RepoURL is the Helm repository URL (Helm only).
+	RepoURL string `json:"repoURL,omitempty"`
+	// LatestVersion is a newer chart version Sveltos found in the
+	// repository, when it checks for updates (Helm only).
+	LatestVersion string `json:"latestVersion,omitempty"`
+	// Uninstall reports a Helm chart the profile removes rather than
+	// installs (helmChartAction: Uninstall).
+	Uninstall bool `json:"uninstall,omitempty"`
 	// Status is the Sveltos FeatureStatus of the owning feature
 	// (Provisioned, Provisioning, Failed, ...), or "Conflict" for a Helm
 	// release already managed by another profile.
@@ -107,6 +120,19 @@ type ProfileStatus struct {
 	// as opposed to per-deployment errors.
 	FailureMessage string `json:"failureMessage,omitempty"`
 	Paused         bool   `json:"paused,omitempty"`
+	// SuspensionReason explains why reconciliation is paused, when known.
+	SuspensionReason string `json:"suspensionReason,omitempty"`
+	// SyncMode is the profile's syncMode (OneTime, Continuous,
+	// ContinuousWithDriftDetection, DryRun); empty means Sveltos' default.
+	SyncMode string `json:"syncMode,omitempty"`
+	// Tier resolves conflicts between profiles deploying the same resource:
+	// the lower tier wins. Zero means Sveltos' default (100).
+	Tier int `json:"tier,omitempty"`
+	// DependsOn lists the profiles that must be deployed first.
+	DependsOn []string `json:"dependsOn,omitempty"`
+	// Dependencies reports the state of DependsOn, e.g. which ones are not
+	// deployed yet.
+	Dependencies string `json:"dependencies,omitempty"`
 	// SelectorLabels are the cluster label keys the profile's clusterSelector
 	// matches on. Chihiro parameters that write one of these labels are shown
 	// as controlling the profile.
@@ -363,6 +389,8 @@ func parseClusterSummary(obj *unstructured.Unstructured) (summary, bool) {
 			fs.FeatureID, _ = fm["featureID"].(string)
 			fs.Status, _ = fm["status"].(string)
 			fs.FailureMessage, _ = fm["failureMessage"].(string)
+			fs.ConsecutiveFailures = toInt(fm["consecutiveFailures"])
+			fs.DeployedKinds = stringList(fm["deployedGroupVersionKind"])
 			if ts, ok := fm["lastAppliedTime"].(string); ok {
 				if t, err := time.Parse(time.RFC3339, ts); err == nil {
 					fs.LastAppliedTime = &t
@@ -372,6 +400,17 @@ func parseClusterSummary(obj *unstructured.Unstructured) (summary, bool) {
 			features[fs.FeatureID] = fs
 		}
 	}
+	// Newer Sveltos versions report deployed kinds in status.deployedGVKs
+	// rather than per feature summary.
+	for _, info := range listOfMaps(status["deployedGVKs"]) {
+		id, _ := info["featureID"].(string)
+		kinds := stringList(info["deployedGroupVersionKind"])
+		for i := range profile.Features {
+			if profile.Features[i].FeatureID == id && len(profile.Features[i].DeployedKinds) == 0 {
+				profile.Features[i].DeployedKinds = kinds
+			}
+		}
+	}
 	sort.Slice(profile.Features, func(i, j int) bool { return profile.Features[i].FeatureID < profile.Features[j].FeatureID })
 
 	profileSpec, _ := spec["clusterProfileSpec"].(map[string]interface{})
@@ -379,6 +418,11 @@ func parseClusterSummary(obj *unstructured.Unstructured) (summary, bool) {
 	profile.SelectorLabels = selectorLabelKeys(profileSpec["clusterSelector"])
 	profile.FailureMessage, _ = status["failureMessage"].(string)
 	profile.Paused, _ = status["reconciliationSuspended"].(bool)
+	profile.SuspensionReason, _ = status["suspensionReason"].(string)
+	profile.Dependencies, _ = status["dependencies"].(string)
+	profile.SyncMode, _ = profileSpec["syncMode"].(string)
+	profile.Tier = toInt(profileSpec["tier"])
+	profile.DependsOn = stringList(profileSpec["dependsOn"])
 	profile.State = profileState(&profile, obj.GetDeletionTimestamp() != nil)
 
 	return summary{clusterKey: ClusterKey(clusterNamespace, clusterName), profile: profile}, true
@@ -391,7 +435,7 @@ func parseClusterSummary(obj *unstructured.Unstructured) (summary, bool) {
 func parseDeployments(profileSpec, status map[string]interface{}, features map[string]FeatureStatus) []Deployment {
 	deployments := []Deployment{}
 
-	type release struct{ status, message string }
+	type release struct{ status, message, latest string }
 	releases := make(map[string]release)
 	if items, ok := status["helmReleaseSummaries"].([]interface{}); ok {
 		for _, r := range items {
@@ -406,7 +450,8 @@ func parseDeployments(profileSpec, status map[string]interface{}, features map[s
 			if fm, ok := rm["failureMessage"].(string); ok && fm != "" {
 				msg = fm
 			}
-			releases[ns+"/"+name] = release{status: st, message: msg}
+			latest, _ := rm["latestVersion"].(string)
+			releases[ns+"/"+name] = release{status: st, message: msg, latest: latest}
 		}
 	}
 
@@ -436,6 +481,9 @@ func parseDeployments(profileSpec, status map[string]interface{}, features map[s
 		if version != "" {
 			d.Source += "@" + version
 		}
+		d.RepoURL, _ = item["repositoryURL"].(string)
+		action, _ := item["helmChartAction"].(string)
+		d.Uninstall = action == "Uninstall"
 		d = withFeature(d)
 		if r, ok := releases[d.Namespace+"/"+d.Name]; ok {
 			if r.status == "Conflict" {
@@ -443,6 +491,9 @@ func parseDeployments(profileSpec, status map[string]interface{}, features map[s
 			}
 			if r.message != "" {
 				d.Message = r.message
+			}
+			if r.latest != "" && r.latest != version {
+				d.LatestVersion = r.latest
 			}
 		}
 		deployments = append(deployments, d)
@@ -500,6 +551,32 @@ func selectorLabelKeys(v interface{}) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func stringList(v interface{}) []string {
+	items, _ := v.([]interface{})
+	var out []string
+	for _, item := range items {
+		if s, ok := item.(string); ok && s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// toInt reads an integer from a decoded JSON number (int64 or float64).
+func toInt(v interface{}) int {
+	switch n := v.(type) {
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	case int:
+		return n
+	case int32:
+		return int(n)
+	}
+	return 0
 }
 
 func listOfMaps(v interface{}) []map[string]interface{} {

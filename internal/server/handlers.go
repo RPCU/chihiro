@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -10,9 +11,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/Bealvio/chihiro/internal/auth"
 	"github.com/Bealvio/chihiro/internal/cluster"
+	"github.com/Bealvio/chihiro/internal/sveltos"
 	"github.com/Bealvio/chihiro/internal/watcher"
 )
 
@@ -1548,4 +1551,63 @@ func (s *Server) handleEditClusterParameter(c *gin.Context) {
 		"parameter": req.Key,
 		"value":     req.Value,
 	})
+}
+
+// handleClusterDetails serves the cluster page's on-demand data: the
+// cluster's Machines and, when the Sveltos integration is enabled, what each
+// add-on profile actually deployed (Sveltos ClusterConfiguration). Both are
+// read-only and scoped to a cluster the user can already see. Each part fails
+// independently so one missing permission doesn't blank the whole page.
+func (s *Server) handleClusterDetails(c *gin.Context) {
+	user, ok := auth.GetUserFromContext(c.Request.Context())
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	clusterName := c.Param("name")
+	namespace := c.Query("namespace")
+	if namespace == "" {
+		namespace = "capi-system"
+	}
+
+	var target *watcher.ClusterInfo
+	for _, cl := range s.watcher.GetClustersForUser(user.Groups) {
+		if cl.Name == clusterName && cl.Namespace == namespace {
+			target = cl
+			break
+		}
+	}
+	if target == nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Forbidden: You don't have access to this cluster"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer cancel()
+
+	resp := gin.H{}
+	machines, err := s.watcher.ListMachines(ctx, namespace, clusterName)
+	if err != nil {
+		slog.Error("Failed to list machines", "cluster_name", clusterName, "namespace", namespace, "error", err)
+		resp["machinesError"] = "Failed to list machines"
+	} else {
+		resp["machines"] = machines
+	}
+
+	if target.Sveltos != nil {
+		deployed, err := sveltos.FetchDeployed(ctx, s.watcher.GetClient(), s.watcher.GetResolver(), namespace, clusterName)
+		switch {
+		case err == nil:
+			resp["addonResources"] = deployed
+		case apierrors.IsNotFound(err):
+			// Sveltos hasn't deployed anything on this cluster yet.
+			resp["addonResources"] = []sveltos.DeployedProfile{}
+		default:
+			slog.Error("Failed to read Sveltos ClusterConfiguration", "cluster_name", clusterName, "namespace", namespace, "error", err)
+			resp["addonResourcesError"] = "Failed to read deployed add-on resources"
+		}
+	}
+
+	c.JSON(http.StatusOK, resp)
 }
