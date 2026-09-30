@@ -367,15 +367,18 @@ function renderMachineRow(m) {
         </tr>`;
 }
 
+function renderDeployedResourcesError() {
+    const err = clusterPageData.addonResourcesError;
+    return err ? `<div class="addon-note section-note">${escapeHtml(err)}</div>` : '';
+}
+
 // renderDeployedResources lists, inside an add-on card, what the add-on
 // actually deployed on the cluster (Sveltos ClusterConfiguration).
 function renderDeployedResources(cluster, addon) {
     if (addon.provider !== 'Sveltos') return '';
     const data = clusterPageData;
-    if (!data.loaded) return '';
-    if (data.addonResourcesError) {
-        return `<div class="addon-note error">${escapeHtml(data.addonResourcesError)}</div>`;
-    }
+    // A read error is shown once for the section (renderDeployedResourcesError).
+    if (!data.loaded || data.addonResourcesError) return '';
     const profile = (data.addonResources || []).find(p => p.kind === addon.kind && p.name === addon.name);
     const items = profile ? profile.items : [];
     if (items.length === 0) return '';

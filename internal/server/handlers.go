@@ -1603,6 +1603,9 @@ func (s *Server) handleClusterDetails(c *gin.Context) {
 		case apierrors.IsNotFound(err):
 			// Sveltos hasn't deployed anything on this cluster yet.
 			resp["addonResources"] = []sveltos.DeployedProfile{}
+		case apierrors.IsForbidden(err):
+			slog.Warn("Not allowed to read Sveltos ClusterConfigurations", "cluster_name", clusterName, "namespace", namespace, "error", err)
+			resp["addonResourcesError"] = "Deployed resources unavailable: chihiro's service account lacks get on Sveltos clusterconfigurations"
 		default:
 			slog.Error("Failed to read Sveltos ClusterConfiguration", "cluster_name", clusterName, "namespace", namespace, "error", err)
 			resp["addonResourcesError"] = "Failed to read deployed add-on resources"
